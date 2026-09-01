@@ -7,7 +7,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var bridge: XrayBridge?
     private var stopped = false
 
-    override func startTunnel(with options: [String : NSObject]?) {
+    override func startTunnel(with options: [String : NSObject]?) async {
         guard let cfg = protocolConfiguration.providerConfiguration?["xrayConfig"] as? String else {
             NSLog("[v2raynos] 拿到配置失败");
             cancelTunnel(withError: NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"]));
@@ -58,7 +58,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self = self else { return }
             while !self.stopped {
                 self.packetFlow.readPacketObjects { packets in
-                    guard let self = self else { return }
                     if packets.isEmpty { return }
                     // 把读到的包交给 hev/xray 处理，得到 return 包后写回虚拟网卡
                     let out = self.handle(packets: packets)
@@ -74,7 +73,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         return packets
     }
 
-    override func stopTunnel(with reason: NEProviderStopReason) {
+    override func stopTunnel(with reason: NEProviderStopReason) async {
         stopped = true
         bridge?.stop()
         cancelTunnel(with: reason)
