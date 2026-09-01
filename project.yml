@@ -1,0 +1,68 @@
+name: V2raynos
+options:
+  bundleIdPrefix: com.v2raynos
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+targets:
+  V2raynos:
+    type: application
+    platform: iOS
+    sources:
+      - path: V2raynos
+    dependencies:
+      - target: V2raynosPacketTunnel
+        embed: true
+    info:
+      path: V2raynos/Info.plist
+      properties:
+        CFBundleDisplayName: V2raynos
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.v2raynos.app
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(SRCROOT)/frameworks"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - "XrayCore"
+  V2raynosPacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PacketTunnel
+      - path: V2raynos/Services/XrayBridge.swift
+    info:
+      path: PacketTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: V2raynosPacketTunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).PacketTunnelProvider"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.v2raynos.app.packet-tunnel
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(SRCROOT)/frameworks"
+        LIBRARY_SEARCH_PATHS:
+          - "$(SRCROOT)/frameworks"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-framework"
+          - "XrayCore"
+          - "-lhev-socks5-tunnel"

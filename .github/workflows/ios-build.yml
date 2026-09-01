@@ -1,0 +1,53 @@
+name: ios-build
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone Xray core bind (AndroidLibXrayLite @ v26.8.20)
+        run: |
+          git clone --depth 1 --branch v26.8.20 https://github.com/2dust/AndroidLibXrayLite.git deps/AndroidLibXrayLite
+      - name: Clone hev-socks5-tunnel (with C submodules)
+        run: |
+          git clone --depth 1 --recurse-submodules https://github.com/heiher/hev-socks5-tunnel.git deps/hev-socks5-tunnel
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: Install gomobile & xcodegen
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          brew install xcodegen
+      - name: Build Xray framework
+        env:
+          GOTOOLCHAIN: auto
+        run: |
+          bash scripts/build_xray_ios.sh "deps/AndroidLibXrayLite" "$GITHUB_WORKSPACE/frameworks" v26.8.20
+      - name: Build hev framework
+        run: |
+          bash scripts/build_hev_ios.sh "deps/hev-socks5-tunnel" "$GITHUB_WORKSPACE/frameworks"
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build unsigned app (device)
+        run: |
+          xcodebuild -project V2raynos.xcodeproj -scheme V2raynos \
+                     -configuration Release -sdk iphoneos \
+                     -destination "generic/platform=iOS" \
+                     CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" \
+                     build
+      - name: Package ipa
+        run: |
+          set -e
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -name "V2raynos.app" -path "*Release-iphoneos*" | head -1)
+          echo "APP=$APP"
+          bash scripts/build_ipa.sh "$APP" "$GITHUB_WORKSPACE"
+      - name: Upload ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: V2raynos-unsigned.ipa
+          path: V2raynos.ipa

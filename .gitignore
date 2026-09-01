@@ -1,0 +1,19 @@
+# ---- 构建产物（由 CI/本地生成，不入库）----
+frameworks/
+deps/
+Payload/
+build/
+DerivedData/
+*.ipa
+
+# ---- xcodegen 生成的工程（用 project.yml 重新生成）----
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+
+# ---- 系统/杂项 ----
+.DS_Store
+Thumbs.db
+
+# ---- Go/本地缓存 ----
+*.framework/
