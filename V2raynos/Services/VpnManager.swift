@@ -2,7 +2,7 @@ import Foundation
 import NetworkExtension
 
 /// PacketTunnelProvider 专用协议配置（必须子类化 NEVPNProtocol 保存自定义配置）
-private final class V2rayTunnelProtocol: NEVPNProtocol {}
+private final class V2rayTunnelProtocol: NETunnelProviderProtocol {}
 
 final class VpnManager: ObservableObject {
     @Published var status: NEVPNStatus = .disconnected
