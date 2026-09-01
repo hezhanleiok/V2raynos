@@ -17,6 +17,7 @@ targets:
     dependencies:
       - target: V2raynosPacketTunnel
         embed: true
+      - framework: frameworks/XrayCore.xcframework
     info:
       path: V2raynos/Info.plist
       properties:
@@ -35,16 +36,14 @@ targets:
         CODE_SIGN_IDENTITY: ""
         FRAMEWORK_SEARCH_PATHS:
           - "$(SRCROOT)/frameworks"
-        OTHER_LDFLAGS:
-          - "$(inherited)"
-          - "-framework"
-          - "XrayCore"
   V2raynosPacketTunnel:
     type: app-extension
     platform: iOS
     sources:
       - path: PacketTunnel
       - path: V2raynos/Services/XrayBridge.swift
+    dependencies:
+      - framework: frameworks/XrayCore.xcframework
     info:
       path: PacketTunnel/Info.plist
       properties:
@@ -63,6 +62,4 @@ targets:
           - "$(SRCROOT)/frameworks"
         OTHER_LDFLAGS:
           - "$(inherited)"
-          - "-framework"
-          - "XrayCore"
           - "-lhev-socks5-tunnel"

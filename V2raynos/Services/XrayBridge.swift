@@ -37,7 +37,7 @@ final class MyCallbackHandler: NSObject, Libv2rayCoreCallbackHandler {
     func startup() -> Int32 { return 0 }
     func shutdown() -> Int32 { return 0 }
     func onEmitStatus(_ level: Int32, _ msg: String) -> Int32 {
-        print("[xray]\(" + (msg))
+        print("[xray] \(msg)")
         return 0
     }
 }
