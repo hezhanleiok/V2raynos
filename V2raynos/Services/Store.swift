@@ -38,8 +38,46 @@ class Store: ObservableObject {
 
     // --- 订阅 ---
     func addSubscription(_ s: Subscription) { subscriptions.append(s); saveSubscriptions() }
-    func updateSubscriptions(from url: String) {
-        // 简易：网络获取订阅内容（在真实实现中走 URLSession + ProfileParser 批量解析）
+    func updateSubscriptions(from url: String) { updateSubscription(url: url) }
+
+    func updateAllSubscriptions() { for s in subscriptions { updateSubscription(url: s.url) } }
+
+    /// 批量解析订阅/文本中的链接并加入指定分组
+    func importLinks(_ text: String, into groupID: String?) {
+        var body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 订阅全文常是 base64 编码
+        if body.range(of: "://") == nil, let dec = Self.b64decode(body) { body = dec }
+        let links = body.split { $0.isNewline }.map { String($0).trimmingCharacters(in: .whitespaces) }.filter { $0.contains("://") }
+        let gid = groupID ?? currentGroupID()
+        var added = 0
+        for link in links {
+            if let p = try? ProfileParser.parse(link, groupID: gid) { servers.append(p); added += 1 }
+        }
+        if added > 0 { saveServers() }
+    }
+
+    private func updateSubscription(url: String) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = URL(string: trimmed) else { return }
+        URLSession.shared.dataTask(with: u) { data, _, _ in
+            guard let data = data, let text = String(data: data, encoding: .utf8) else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                let gid = self.subscriptions.first { $0.url == trimmed }?.groupID ?? self.currentGroupID()
+                self.importLinks(text, into: gid)
+                if let i = self.subscriptions.firstIndex(where: { $0.url == trimmed }) {
+                    self.subscriptions[i].lastUpdated = Date()
+                    self.saveSubscriptions()
+                }
+            }
+        }.resume()
+    }
+
+    private static func b64decode(_ s: String) -> String? {
+        var b = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while b.count % 4 != 0 { b += "=" }
+        guard let d = Data(base64Encoded: b, options: .ignoreUnknownCharacters) else { return nil }
+        return String(data: d, encoding: .utf8)
     }
 
     // --- 持久化 ---
