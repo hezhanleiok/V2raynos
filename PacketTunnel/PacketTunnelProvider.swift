@@ -7,7 +7,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var bridge: XrayBridge?
     private var stopped = false
 
-    override func startTunnel(with options: [String : NSObject]?) async {
+    override func startTunnel(options: [String : NSObject]?) async {
         guard let cfg = protocolConfiguration.providerConfiguration?["xrayConfig"] as? String else {
             NSLog("[v2raynos] 拿到配置失败");
             cancelTunnel(withError: NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"]));
