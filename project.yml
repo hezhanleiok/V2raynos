@@ -36,6 +36,9 @@ targets:
         CODE_SIGN_IDENTITY: ""
         FRAMEWORK_SEARCH_PATHS:
           - "$(SRCROOT)/frameworks"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lresolv"
   V2raynosPacketTunnel:
     type: app-extension
     platform: iOS
@@ -63,3 +66,4 @@ targets:
         OTHER_LDFLAGS:
           - "$(inherited)"
           - "-lhev-socks5-tunnel"
+          - "-lresolv"
