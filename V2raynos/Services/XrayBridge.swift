@@ -8,7 +8,7 @@ import XrayCore   // 框架模块名 = gomobile bind 的 -o 基名(XrayCore)；�
 final class XrayBridge {
     private var controller: Libv2rayCoreController?
     // 记录状态回调（对应 Go 接口 CoreCallbackHandler）
-    private var handler: Libv2rayCoreCallbackHandler?
+    private var handler: Libv2rayCoreCallbackHandlerProtocol?
 
     func setup(envPath: String, key: String) {
         Libv2rayInitCoreEnv(envPath, key)
@@ -33,7 +33,7 @@ final class XrayBridge {
 }
 
 /// 实现 Go 接口 CoreCallbackHandler 的回调
-final class MyCallbackHandler: NSObject, Libv2rayCoreCallbackHandler {
+final class MyCallbackHandler: NSObject, Libv2rayCoreCallbackHandlerProtocol {
     func startup() -> Int32 { return 0 }
     func shutdown() -> Int32 { return 0 }
     func onEmitStatus(_ level: Int32, _ msg: String) -> Int32 {

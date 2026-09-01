@@ -7,10 +7,10 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var bridge: XrayBridge?
     private var stopped = false
 
-    override func startTunnel(withOptions options: [String: NSObject]? = nil) {
+    override func startTunnel(with options: [String : NSObject]?) {
         guard let cfg = protocolConfiguration.providerConfiguration?["xrayConfig"] as? String else {
             NSLog("[v2raynos] 拿到配置失败");
-            cancelTunnelWithError(NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"]));
+            cancelTunnel(withError: NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"]));
             return
         }
 
@@ -25,7 +25,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         setTunnelNetworkSettings(settings) { [weak self] error in
             guard let self = self else { return }
             if let error = error {
-                self.cancelTunnelWithError(error); return
+                self.cancelTunnel(withError: error); return
             }
             // 2) 启动 Xray 核心（提供本地 SOCKS 入站，tunFd 传 0 表示由 hev 桥接）
             let bridge = XrayBridge()
@@ -36,7 +36,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                 NSLog("[v2raynos] Xray core started")
             } catch {
                 NSLog("[v2raynos] core start err: \(error)");
-                self.cancelTunnelWithError(error); return
+                self.cancelTunnel(withError: error); return
             }
             // 3) 进入包收发循环（hev-socks5-tunnel 桥接 TUN <-> 内核 SOCKS）
             self.startPacketPump()
@@ -62,7 +62,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                     if packets.isEmpty { return }
                     // 把读到的包交给 hev/xray 处理，得到 return 包后写回虚拟网卡
                     let out = self.handle(packets: packets)
-                    self.packetFlow.writePackets(out.map { $0.packet }, withProtocols: out.map { $0.protocol })
+                    self.packetFlow.writePackets(out.map { $0.data }, withProtocols: out.map { $0.protocolFamily })
                 }
             }
         }
@@ -77,6 +77,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason) {
         stopped = true
         bridge?.stop()
-        cancelTunnel(withReason: reason)
+        cancelTunnel(with: reason)
     }
 }
