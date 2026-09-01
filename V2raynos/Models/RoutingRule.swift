@@ -1,6 +1,7 @@
 import Foundation
 
-enum RoutingPrefab: String, Codable, CaseIterable {
+enum RoutingPrefab: String, Codable, CaseIterable, Identifiable {
+    var id: String { rawValue }
     case bypassLAN, proxyAll, global
     var display: String {
         switch self {

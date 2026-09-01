@@ -2,12 +2,12 @@ name: V2raynos
 options:
   bundleIdPrefix: com.v2raynos
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "16.0"
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
 targets:
   V2raynos:
     type: application

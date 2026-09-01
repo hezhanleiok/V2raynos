@@ -11,7 +11,7 @@ struct SubscriptionView: View {
                         VStack(alignment: .leading) {
                             Text(s.name).font(.headline)
                             Text(s.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
-                            Text("更新于 \(s.lastUpdated, format: .dateTime)").font(.caption2).foregroundColor(.tertiary)
+                            Text("更新于 \(s.lastUpdated, format: .dateTime)").font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
                     .onDelete { i in
