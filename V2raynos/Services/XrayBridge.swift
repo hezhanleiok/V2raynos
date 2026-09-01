@@ -17,9 +17,11 @@ final class XrayBridge {
     func start(configJSON: String, tunFd: Int32) throws {
         let h = MyCallbackHandler()
         handler = h
-        let c = Libv2rayNewCoreController(h)
+        guard let c = Libv2rayNewCoreController(h) else {
+            throw NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "create controller failed"])
+        }
         controller = c
-        try c.startLoop(configJSON, tunFd)
+        try c.startLoop(configJSON, tunFd: tunFd)
     }
 
     func stop() {
@@ -34,10 +36,10 @@ final class XrayBridge {
 
 /// 实现 Go 接口 CoreCallbackHandler 的回调
 final class MyCallbackHandler: NSObject, Libv2rayCoreCallbackHandlerProtocol {
-    func startup() -> Int32 { return 0 }
-    func shutdown() -> Int32 { return 0 }
-    func onEmitStatus(_ level: Int32, _ msg: String) -> Int32 {
-        print("[xray] \(msg)")
+    func startup() -> Int { return 0 }
+    func shutdown() -> Int { return 0 }
+    func onEmitStatus(_ level: Int, p1: String?) -> Int {
+        if let m = p1 { print("[xray] \(m)") }
         return 0
     }
 }

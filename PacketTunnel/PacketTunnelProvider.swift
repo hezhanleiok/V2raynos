@@ -62,7 +62,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
                     if packets.isEmpty { return }
                     // 把读到的包交给 hev/xray 处理，得到 return 包后写回虚拟网卡
                     let out = self.handle(packets: packets)
-                    self.packetFlow.writePackets(out.map { $0.data }, withProtocols: out.map { $0.protocolFamily })
+                    self.packetFlow.writePackets(out.map { $0.data }, withProtocols: out.map { NSNumber(value: $0.protocolFamily) })
                 }
             }
         }
