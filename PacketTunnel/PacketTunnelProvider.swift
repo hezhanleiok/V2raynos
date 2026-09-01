@@ -9,9 +9,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func startTunnel(options: [String : NSObject]?) async throws {
         guard let cfg = protocolConfiguration.providerConfiguration?["xrayConfig"] as? String else {
-            NSLog("[v2raynos] 拿到配置失败");
-            cancelTunnel(withError: NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"]));
-            return
+            NSLog("[v2raynos] 拿到配置失败")
+            throw NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"])
         }
 
         // 1) 建立虚拟网卡网络设置（对应 v2rayNG 的 VpnService）
@@ -22,25 +21,18 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         settings.ipv4Settings = ipv4
         settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
 
-        setTunnelNetworkSettings(settings) { [weak self] error in
-            guard let self = self else { return }
-            if let error = error {
-                self.cancelTunnel(withError: error); return
-            }
-            // 2) 启动 Xray 核心（提供本地 SOCKS 入站，tunFd 传 0 表示由 hev 桥接）
-            let bridge = XrayBridge()
-            self.bridge = bridge
-            bridge.setup(envPath: self.configDirPath(), key: "")
-            do {
-                try bridge.start(configJSON: cfg, tunFd: 0)
-                NSLog("[v2raynos] Xray core started")
-            } catch {
-                NSLog("[v2raynos] core start err: \(error)");
-                self.cancelTunnel(withError: error); return
-            }
-            // 3) 进入包收发循环（hev-socks5-tunnel 桥接 TUN <-> 内核 SOCKS）
-            self.startPacketPump()
-        }
+        // 2) 应用网络设置（async/await；出错即抛出并由系统中止隧道）
+        try await setTunnelNetworkSettings(settings)
+
+        // 3) 启动 Xray 核心（本地 SOCKS 入站，tunFd=0 表示由 hev 桥接）
+        let bridge = XrayBridge()
+        self.bridge = bridge
+        bridge.setup(envPath: configDirPath(), key: "")
+        try bridge.start(configJSON: cfg, tunFd: 0)
+        NSLog("[v2raynos] Xray core started")
+
+        // 4) 进入包收发循环（hev-socks5-tunnel 桥接 TUN <-> 内核 SOCKS）
+        startPacketPump()
     }
 
     private func configDirPath() -> String {
@@ -49,9 +41,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// 在 packetFlow 与 TUN 之间搬运数据包。
-    /// 这里通过 hev-socks5-tunnel（C，见 scripts/build_hev_ios.sh 编的框架）把
-    /// packetFlow 读到的包转成 SOCKS5 请求发给 Xray 的本地入站；
-    /// 实际调用会封装在 build_hev 产物提供的能力里，此处为骨架示意。
+    /// 这里通过 hev-socks5-tunnel（C）把 packetFlow 读到的包转成 SOCKS5 请求发给 Xray 本地入站
     private func startPacketPump() {
         let queue = DispatchQueue(label: "v2raynos.pump")
         queue.async { [weak self] in
@@ -59,7 +49,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             while !self.stopped {
                 self.packetFlow.readPacketObjects { packets in
                     if packets.isEmpty { return }
-                    // 把读到的包交给 hev/xray 处理，得到 return 包后写回虚拟网卡
                     let out = self.handle(packets: packets)
                     self.packetFlow.writePackets(out.map { $0.data }, withProtocols: out.map { NSNumber(value: $0.protocolFamily) })
                 }
@@ -76,6 +65,5 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason) async {
         stopped = true
         bridge?.stop()
-        cancelTunnel(with: reason)
     }
 }
