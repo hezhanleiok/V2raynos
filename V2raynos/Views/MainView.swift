@@ -178,7 +178,7 @@ struct MainView: View {
 
     func testOne(_ s: ServerProfile, completion: @escaping (Int) -> Void) {
         guard let u16 = UInt16(exactly: s.port) else { completion(-1); return }
-        let port = NWEndpoint.Port(u16)
+        let port = NWEndpoint.Port(rawValue: u16)
         let conn = NWConnection(host: NWEndpoint.Host(s.address), port: port, using: .tcp)
         let start = Date()
         let q = DispatchQueue(label: "ping.\(s.id)")
@@ -191,7 +191,7 @@ struct MainView: View {
                 completion(ms)
             }
         }
-        conn.stateUpdateHandler = { st in
+        conn.stateUpdateHandler = { (st: NWConnection.State) in
             switch st {
             case .ready: finish(Int(Date().timeIntervalSince(start) * 1000))
             case .failed: finish(-1)
