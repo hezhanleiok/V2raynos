@@ -8,6 +8,7 @@ class Store: ObservableObject {
     @Published var servers: [ServerProfile] = []
     @Published var subscriptions: [Subscription] = []
     @Published var currentServerID: String? = nil
+    @Published var selectedGroupID: String? = nil
     @Published var lastSubscriptionError: String? = nil
 
     private let fileManager = FileManager.default
@@ -38,7 +39,27 @@ class Store: ObservableObject {
     func servers(inGroup gid: String) -> [ServerProfile] { servers.filter { $0.groupID == gid } }
 
     // --- 订阅 ---
-    func addSubscription(_ s: Subscription) { subscriptions.append(s); saveSubscriptions() }
+    /// 添加订阅：自动创建同名分组，节点导入该分组
+    func addSubscription(_ s: Subscription) {
+        var sub = s
+        let g = ServerGroup(name: sub.name.isEmpty ? "订阅" : sub.name, subscriptionID: nil)
+        groups.append(g)
+        sub.groupID = g.id
+        subscriptions.append(sub)
+        if let gi = groups.firstIndex(where: { $0.id == g.id }) { groups[gi].subscriptionID = sub.id }
+        saveGroups(); saveSubscriptions()
+    }
+    /// 删除订阅：连同其分组与组内节点
+    func removeSubscription(_ s: Subscription) {
+        subscriptions.removeAll { $0.id == s.id }
+        if let g = groups.first(where: { $0.subscriptionID == s.id }) { removeGroup(g) }
+        saveSubscriptions()
+    }
+    func renameGroup(_ g: ServerGroup, to name: String) {
+        if let i = groups.firstIndex(where: { $0.id == g.id }), !name.isEmpty { groups[i].name = name; saveGroups() }
+    }
+    /// 当前界面显示的分组
+    func displayGroupID() -> String { selectedGroupID ?? groups.first?.id ?? "" }
     func updateSubscriptions(from url: String) { updateSubscription(url: url) }
     func updateAllSubscriptions() { for s in subscriptions { updateSubscription(url: s.url) } }
 
@@ -66,7 +87,7 @@ class Store: ObservableObject {
                        .replacingOccurrences(of: "\r", with: "\n")
             let finalText = text
             DispatchQueue.main.async {
-                let gid = self.subscriptions.first { $0.url == trimmed }?.groupID ?? self.currentGroupID()
+                let gid = self.subscriptions.first { $0.url == trimmed }?.groupID ?? self.displayGroupID()
                 // 刷新 = 先清空该订阅分组旧节点，避免重复堆积
                 self.servers.removeAll { $0.groupID == gid }
                 self.importLinks(finalText, into: gid)
@@ -74,9 +95,9 @@ class Store: ObservableObject {
                     self.subscriptions[i].lastUpdated = Date()
                     self.saveSubscriptions()
                 }
-                // 当前选中失效则自动选第一个
+                // 当前选中失效则自动选中该分组第一个
                 if self.currentServerID == nil || !self.servers.contains(where: { $0.id == self.currentServerID }) {
-                    self.currentServerID = self.servers.first?.id
+                    self.currentServerID = self.servers.first { $0.groupID == gid }?.id
                 }
                 if self.servers.isEmpty { self.lastSubscriptionError = "订阅内容未解析出任何节点" }
             }
@@ -93,7 +114,7 @@ class Store: ObservableObject {
         if !compact.isEmpty, let dec = Self.b64decode(compact), dec.contains("://") {
             body = dec
         }
-        let gid = groupID ?? currentGroupID()
+        let gid = groupID ?? displayGroupID()
         let links = body.split { $0.isNewline }
                         .map { $0.trimmingCharacters(in: .whitespaces) }
                         .filter { $0.contains("://") }
