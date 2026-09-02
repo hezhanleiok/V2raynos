@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import CFNetwork
 
 /// 真实链接延迟测试（v2rayNG 同款）：本地临时起 Xray socks 入站，经代理实测 generate_204。
 /// 失败自动回退 TCP 握手延迟。
@@ -35,7 +34,7 @@ final class LatencyTester: ObservableObject {
     /// 经临时代理实测 generate_204
     private func testOne(_ s: ServerProfile, completion: @escaping (Int) -> Void) {
         let port = 20000 + Int.random(in: 0...20000)
-        let cfg = ConfigGenerator.xrayJSON(profile: s, localPort: port)
+        let cfg = ConfigGenerator.latencyJSON(profile: s, httpPort: port)
         if cfg == "{}" { tcpPing(s, completion: completion); return }
         let bridge = XrayBridge()
         bridge.setup(envPath: NSTemporaryDirectory(), key: "latency")
@@ -45,10 +44,14 @@ final class LatencyTester: ObservableObject {
         cfgObj.timeoutIntervalForRequest = timeout
         cfgObj.timeoutIntervalForResource = timeout
         cfgObj.requestCachePolicy = .reloadIgnoringLocalCacheData
+        // iOS URLSession 不支持 SOCKS，用 http 入站 + HTTP 代理字典（字符串键在 iOS 有效）
         let proxyDict: [AnyHashable: Any] = [
-            kCFNetworkProxiesSOCKSEnable: 1,
-            kCFNetworkProxiesSOCKSProxy: "127.0.0.1",
-            kCFNetworkProxiesSOCKSPort: port,
+            "HTTPEnable": 1,
+            "HTTPProxy": "127.0.0.1",
+            "HTTPPort": port,
+            "HTTPSEnable": 1,
+            "HTTPSProxy": "127.0.0.1",
+            "HTTPSPort": port,
         ]
         cfgObj.connectionProxyDictionary = proxyDict
         let session = URLSession(configuration: cfgObj)

@@ -19,6 +19,22 @@ struct ConfigGenerator {
         return s
     }
 
+    /// 延迟测试专用：http 入站（iOS URLSession 不支持 SOCKS，走 HTTP 代理）
+    static func latencyJSON(profile p: ServerProfile, httpPort: Int) -> String {
+        let outbounds: [Any] = [ outboundDict(p) ] + extraOutbounds()
+        let config: [String: Any] = [
+            "log": ["loglevel": "warning"],
+            "inbounds": [
+                ["listen": "127.0.0.1", "port": httpPort, "protocol": "http", "settings": ["allowTransparent": false]],
+            ],
+            "outbounds": outbounds,
+            "dns": ["servers": ["1.1.1.1", "8.8.8.8"]],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: config, options: []),
+              let s = String(data: data, encoding: .utf8) else { return "{}" }
+        return s
+    }
+
     private static func outboundDict(_ p: ServerProfile) -> [String: Any] {
         var base: [String: Any] = [
             "tag": "proxy",
