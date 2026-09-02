@@ -8,6 +8,7 @@ class Store: ObservableObject {
     @Published var servers: [ServerProfile] = []
     @Published var subscriptions: [Subscription] = []
     @Published var currentServerID: String? = nil
+    @Published var lastSubscriptionError: String? = nil
 
     private let fileManager = FileManager.default
     private var dir: URL { fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0] }
@@ -39,45 +40,78 @@ class Store: ObservableObject {
     // --- 订阅 ---
     func addSubscription(_ s: Subscription) { subscriptions.append(s); saveSubscriptions() }
     func updateSubscriptions(from url: String) { updateSubscription(url: url) }
-
     func updateAllSubscriptions() { for s in subscriptions { updateSubscription(url: s.url) } }
+
+    /// 抓取单个订阅：显式 User-Agent，防机场面板拦截
+    private func updateSubscription(url: String) {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let u = URL(string: trimmed) else { lastSubscriptionError = "订阅 URL 无效"; return }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = 20
+        req.setValue("v2rayNG/1.8.5", forHTTPHeaderField: "User-Agent")
+        req.setValue("text/plain, */*;q=0.8", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
+            guard let self = self else { return }
+            if let error = error {
+                DispatchQueue.main.async { self.lastSubscriptionError = "抓取失败：\(error.localizedDescription)" }
+                return
+            }
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                DispatchQueue.main.async { self.lastSubscriptionError = "服务器返回状态码 \(http.statusCode)" }
+                return
+            }
+            var text = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            // 清除 \r，统一换行符
+            text = text.replacingOccurrences(of: "\r\n", with: "\n")
+                       .replacingOccurrences(of: "\r", with: "\n")
+            let finalText = text
+            DispatchQueue.main.async {
+                let gid = self.subscriptions.first { $0.url == trimmed }?.groupID ?? self.currentGroupID()
+                // 刷新 = 先清空该订阅分组旧节点，避免重复堆积
+                self.servers.removeAll { $0.groupID == gid }
+                self.importLinks(finalText, into: gid)
+                if let i = self.subscriptions.firstIndex(where: { $0.url == trimmed }) {
+                    self.subscriptions[i].lastUpdated = Date()
+                    self.saveSubscriptions()
+                }
+                // 当前选中失效则自动选第一个
+                if self.currentServerID == nil || !self.servers.contains(where: { $0.id == self.currentServerID }) {
+                    self.currentServerID = self.servers.first?.id
+                }
+                if self.servers.isEmpty { self.lastSubscriptionError = "订阅内容未解析出任何节点" }
+            }
+        }.resume()
+    }
 
     /// 批量解析订阅/文本中的链接并加入指定分组
     func importLinks(_ text: String, into groupID: String?) {
-        var body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 订阅全文常是 base64 编码
-        if body.range(of: "://") == nil, let dec = Self.b64decode(body) { body = dec }
-        let links = body.split { $0.isNewline }.map { String($0).trimmingCharacters(in: .whitespaces) }.filter { $0.contains("://") }
+        var body = text
+        // 鲁棒 Base64：无论有没有 ://，先去掉 \n 与空格整体尝试解码，成功且含 :// 才采用
+        let compact = text.replacingOccurrences(of: "\n", with: "")
+                          .replacingOccurrences(of: " ", with: "")
+                          .replacingOccurrences(of: "\t", with: "")
+        if !compact.isEmpty, let dec = Self.b64decode(compact), dec.contains("://") {
+            body = dec
+        }
         let gid = groupID ?? currentGroupID()
+        let links = body.split { $0.isNewline }
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { $0.contains("://") }
         var added = 0
         for link in links {
+            guard !servers.contains(where: { $0.raw == link && $0.groupID == gid }) else { continue }
             if let p = try? ProfileParser.parse(link, groupID: gid) { servers.append(p); added += 1 }
         }
         if added > 0 { saveServers() }
     }
 
-    private func updateSubscription(url: String) {
-        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let u = URL(string: trimmed) else { return }
-        URLSession.shared.dataTask(with: u) { data, _, _ in
-            guard let data = data, let text = String(data: data, encoding: .utf8) else { return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                let gid = self.subscriptions.first { $0.url == trimmed }?.groupID ?? self.currentGroupID()
-                self.importLinks(text, into: gid)
-                if let i = self.subscriptions.firstIndex(where: { $0.url == trimmed }) {
-                    self.subscriptions[i].lastUpdated = Date()
-                    self.saveSubscriptions()
-                }
-            }
-        }.resume()
-    }
-
+    /// 严格 Base64：非法字符直接失败（避免把明文误判为 base64），要求结果为合法 UTF-8
     private static func b64decode(_ s: String) -> String? {
         var b = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         while b.count % 4 != 0 { b += "=" }
-        guard let d = Data(base64Encoded: b, options: .ignoreUnknownCharacters) else { return nil }
-        return String(data: d, encoding: .utf8)
+        guard let d = Data(base64Encoded: b, options: []),
+              let str = String(data: d, encoding: .utf8) else { return nil }
+        return str
     }
 
     // --- 持久化 ---
