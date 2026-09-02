@@ -128,7 +128,6 @@ struct CameraPreview: View {
             layer.videoGravity = .resizeAspectFill
             DispatchQueue.main.async {
                 previewLayer = layer
-                layer.frame = CGRect(x: 0, y: 0, width: geo.size.width, height: geo.size.height)
                 session.startRunning()
             }
             output.setMetadataObjectsDelegate(QRDelegate(onCode: onCode), queue: .main)

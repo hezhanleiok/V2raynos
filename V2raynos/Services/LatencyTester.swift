@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CFNetwork
 
 /// 真实链接延迟测试（v2rayNG 同款）：本地临时起 Xray socks 入站，经代理实测 generate_204。
 /// 失败自动回退 TCP 握手延迟。
@@ -35,19 +36,19 @@ final class LatencyTester: ObservableObject {
     private func testOne(_ s: ServerProfile, completion: @escaping (Int) -> Void) {
         let port = 20000 + Int.random(in: 0...20000)
         let cfg = ConfigGenerator.xrayJSON(profile: s, localPort: port)
-        if cfg == "{}" { tcpPing(s, completion); return }
+        if cfg == "{}" { tcpPing(s, completion: completion); return }
         let bridge = XrayBridge()
         bridge.setup(envPath: NSTemporaryDirectory(), key: "latency")
-        do { try bridge.start(configJSON: cfg, tunFd: 0) } catch { tcpPing(s, completion); return }
+        do { try bridge.start(configJSON: cfg, tunFd: 0) } catch { tcpPing(s, completion: completion); return }
 
         let cfgObj = URLSessionConfiguration.ephemeral
         cfgObj.timeoutIntervalForRequest = timeout
         cfgObj.timeoutIntervalForResource = timeout
         cfgObj.requestCachePolicy = .reloadIgnoringLocalCacheData
         let proxyDict: [AnyHashable: Any] = [
-            kCFProxyTypeKey as String: kCFProxyTypeSOCKSProxy as Any,
-            kCFProxyHostNameKey as String: "127.0.0.1",
-            kCFProxyPortNumberKey as String: port,
+            kCFNetworkProxiesSOCKSEnable: 1,
+            kCFNetworkProxiesSOCKSProxy: "127.0.0.1",
+            kCFNetworkProxiesSOCKSPort: port,
         ]
         cfgObj.connectionProxyDictionary = proxyDict
         let session = URLSession(configuration: cfgObj)
