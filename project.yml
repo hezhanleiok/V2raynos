@@ -33,6 +33,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.v2raynos.app
+        CODE_SIGN_ENTITLEMENTS: V2raynos/V2raynos.entitlements
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGN_IDENTITY: ""
         FRAMEWORK_SEARCH_PATHS:
@@ -68,3 +69,7 @@ targets:
           - "$(inherited)"
           - "-lhev-socks5-tunnel"
           - "-lresolv"
+        SWIFT_OBJC_BRIDGING_HEADER: PacketTunnel/V2raynosPacketTunnel-Bridging.h
+        CODE_SIGN_ENTITLEMENTS: PacketTunnel/V2raynosPacketTunnel.entitlements
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/frameworks"
