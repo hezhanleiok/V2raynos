@@ -66,7 +66,16 @@ class Store: ObservableObject {
         saveSubscriptions(); saveGroups()
     }
     func renameGroup(_ g: ServerGroup, to name: String) {
-        if let i = groups.firstIndex(where: { $0.id == g.id }), !name.isEmpty { groups[i].name = name; saveGroups() }
+        if let i = groups.firstIndex(where: { $0.id == g.id }), !name.isEmpty {
+            groups[i].name = name
+            // 双向同步：分组改名 → 订阅名跟随（首页与订阅管理页保持一致）
+            if let sid = groups[i].subscriptionID,
+               let si = subscriptions.firstIndex(where: { $0.id == sid }) {
+                subscriptions[si].name = name
+                saveSubscriptions()
+            }
+            saveGroups()
+        }
     }
     /// 当前界面显示的分组
     func displayGroupID() -> String { selectedGroupID ?? groups.first?.id ?? "" }
