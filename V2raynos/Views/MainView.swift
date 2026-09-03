@@ -20,6 +20,8 @@ struct MainView: View {
     @State private var showAddServerError = false
     @State private var showVpnError = false
     @State private var sortMode = SortMode.default
+    @State private var showRename: ServerGroup? = nil
+    @State private var renameText = ""
 
     enum SortMode: String, CaseIterable, Identifiable {
         case `default` = "默认"
@@ -65,8 +67,15 @@ struct MainView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button { withAnimation(.easeInOut(duration: 0.25)) { drawerOpen.toggle() } } label: {
-                        Image(systemName: "line.3.horizontal")
+                    HStack(spacing: 10) {
+                        // 左上角 APP 图标（高清显示）
+                        Button { withAnimation(.easeInOut(duration: 0.25)) { drawerOpen.toggle() } } label: {
+                            Image("logo")
+                                .resizable()
+                                .interpolation(.high)
+                                .frame(width: 30, height: 30)
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
+                        }
                     }
                 }
                 // 标题左对齐（v2rayNG 是左对齐，iOS 借 toolbar 结构实现）
@@ -107,6 +116,14 @@ struct MainView: View {
             }
             .onChange(of: vpn.lastError) { err in
                 if err != nil { showVpnError = true }
+            }
+            .alert("分组改名", isPresented: Binding(get: { showRename != nil }, set: { if !$0 { showRename = nil } })) {
+                TextField("新名称", text: $renameText)
+                Button("保存") {
+                    if let g = showRename { store.renameGroup(g, to: renameText) }
+                    showRename = nil
+                }
+                Button("取消", role: .cancel) { showRename = nil }
             }
         }
     }
@@ -172,7 +189,10 @@ struct MainView: View {
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
-                        Button { store.renameGroup(g, to: g.name + "-新") } label: { Label("重命名", systemImage: "pencil") }
+                        if let sub = store.subscriptions.first(where: { $0.groupID == g.id }) {
+                            Button { store.updateSubscriptions(from: sub.url) } label: { Label("更新订阅", systemImage: "arrow.triangle.2.circlepath") }
+                        }
+                        Button { renameText = g.name; showRename = g } label: { Label("重命名", systemImage: "pencil") }
                         Button(role: .destructive) { store.removeGroup(g) } label: { Label("删除分组", systemImage: "trash") }
                     }
                 }

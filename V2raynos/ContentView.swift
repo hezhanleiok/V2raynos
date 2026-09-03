@@ -2,12 +2,11 @@ import SwiftUI
 
 /// 抽屉菜单页（v2rayNG 左侧栏同序）
 enum DrawerPage: Int, Identifiable, Hashable {
-    case subscriptions, perApp, routing, assets, settings, logcat, backup, about
+    case subscriptions, routing, assets, settings, logcat, backup, about
     var id: Int { rawValue }
     var title: String {
         switch self {
         case .subscriptions: return "订阅分组"
-        case .perApp: return "分应用设置"
         case .routing: return "路由设置"
         case .assets: return "资源文件"
         case .settings: return "设置"
@@ -19,7 +18,6 @@ enum DrawerPage: Int, Identifiable, Hashable {
     var icon: String {
         switch self {
         case .subscriptions: return "arrow.triangle.2.circlepath"
-        case .perApp: return "square.grid.2x2"
         case .routing: return "arrow.triangle.branch"
         case .assets: return "doc.on.doc"
         case .settings: return "gearshape"
@@ -66,7 +64,6 @@ struct ContentView: View {
         .sheet(item: $page) { p in
             switch p {
             case .subscriptions: SubscriptionView()
-            case .perApp: PerAppPlaceholderView()
             case .routing: RoutingView()
             case .assets: AssetsView()
             case .settings: SettingsView()
@@ -87,9 +84,11 @@ struct DrawerView: View {
         VStack(alignment: .leading, spacing: 0) {
             // 头部
             VStack(alignment: .leading, spacing: 6) {
-                Image(systemName: "network")
-                    .font(.system(size: 38))
-                    .foregroundColor(.blue)
+                Image("logo")
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 Text("V2raynos").font(.title2).bold()
                 Text("Xray-core · hev-socks5-tunnel")
                     .font(.caption).foregroundStyle(.secondary)
@@ -98,7 +97,7 @@ struct DrawerView: View {
             .padding(20)
             .background(Color.blue.opacity(0.12))
 
-            ForEach([DrawerPage.subscriptions, .perApp, .routing, .assets, .settings, .logcat, .backup, .about], id: \.self) { p in
+            ForEach([DrawerPage.subscriptions, .routing, .assets, .settings, .logcat, .backup, .about], id: \.self) { p in
                 Button {
                     drawerOpen = false
                     page = p
@@ -127,24 +126,6 @@ struct DrawerView: View {
                     .font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(20)
-        }
-    }
-}
-
-/// 分应用设置（iOS 仅占位）
-struct PerAppPlaceholderView: View {
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 14) {
-                Image(systemName: "square.grid.2x2").font(.system(size: 44)).foregroundColor(.secondary)
-                Text("分应用设置").font(.headline)
-                Text("iOS 使用 TUN 全局接管，暂不支持按应用分流")
-                    .font(.subheadline).foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding()
-            .navigationTitle("分应用设置")
-            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

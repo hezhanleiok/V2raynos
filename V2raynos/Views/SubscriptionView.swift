@@ -1,12 +1,14 @@
 import SwiftUI
 import UIKit
 
+/// 订阅分组管理：支持编辑（名称/URL）、更新、删除
 struct SubscriptionView: View {
     @EnvironmentObject var store: Store
     @State private var url = ""
     @State private var name = ""
     @State private var showQR = false
     @State private var updatingID: String? = nil
+    @State private var editingSub: Subscription? = nil
 
     var body: some View {
         NavigationStack {
@@ -28,6 +30,17 @@ struct SubscriptionView: View {
                             }
                             Text(s.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
                             Text("更新于 \(s.lastUpdated, format: .dateTime)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { editingSub = s }
+                        .contextMenu {
+                            Button { editingSub = s } label: { Label("编辑", systemImage: "square.and.pencil") }
+                            Button {
+                                updatingID = s.id
+                                store.updateSubscriptions(from: s.url)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { updatingID = nil }
+                            } label: { Label("更新订阅", systemImage: "arrow.triangle.2.circlepath") }
+                            Button(role: .destructive) { store.removeSubscription(s) } label: { Label("删除", systemImage: "trash") }
                         }
                     }
                     .onDelete { i in
@@ -51,7 +64,7 @@ struct SubscriptionView: View {
                     Button { showQR = true } label: { Label("扫码添加订阅", systemImage: "qrcode.viewfinder") }
                 }
             }
-            .navigationTitle("订阅")
+            .navigationTitle("订阅分组")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -66,6 +79,56 @@ struct SubscriptionView: View {
                     store.addSubscription(s)
                     store.updateSubscriptions(from: code)
                 }
+            }
+            .sheet(item: $editingSub) { sub in
+                SubscriptionEditView(sub: sub) { updated in
+                    store.updateSubscription(updated)
+                    editingSub = nil
+                }
+            }
+        }
+    }
+}
+
+/// 订阅编辑：名称 + URL
+struct SubscriptionEditView: View {
+    let sub: Subscription
+    var onSave: (Subscription) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var url = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("订阅信息") {
+                    TextField("名称（分组名）", text: $name)
+                    TextField("订阅 URL", text: $url)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                }
+            }
+            .navigationTitle("编辑订阅")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        var s = sub
+                        s.name = name.isEmpty ? sub.name : name
+                        s.url = url.isEmpty ? sub.url : url
+                        onSave(s)
+                        dismiss()
+                    }
+                    .disabled(url.isEmpty)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            .onAppear {
+                name = sub.name
+                url = sub.url
             }
         }
     }

@@ -55,6 +55,16 @@ class Store: ObservableObject {
         if let g = groups.first(where: { $0.subscriptionID == s.id }) { removeGroup(g) }
         saveSubscriptions()
     }
+    /// 编辑订阅：保存并同步分组名
+    func updateSubscription(_ s: Subscription) {
+        guard let i = subscriptions.firstIndex(where: { $0.id == s.id }) else { return }
+        subscriptions[i] = s
+        // 同步分组名（订阅名即分组名）
+        if let gi = groups.firstIndex(where: { $0.id == s.groupID }), !s.name.isEmpty {
+            groups[gi].name = s.name
+        }
+        saveSubscriptions(); saveGroups()
+    }
     func renameGroup(_ g: ServerGroup, to name: String) {
         if let i = groups.firstIndex(where: { $0.id == g.id }), !name.isEmpty { groups[i].name = name; saveGroups() }
     }

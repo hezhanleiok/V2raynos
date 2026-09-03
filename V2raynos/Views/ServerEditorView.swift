@@ -1,100 +1,84 @@
 import SwiftUI
 
-/// 节点编辑器：按协议加载模板（+菜单添加 [协议] → 表单）
+/// 节点编辑器：字段与 v2rayNG ServerXxxActivity 模板 1:1
+/// 公共段：别名/地址/端口 → 协议字段 → 传输协议(TCP/KCP/WS/HTTPUpgrade/XHTTP/H2/gRPC + 伪装类型/host/path) → TLS(REALITY 可选/SNI/Fingerprint/ALPN)
 struct ServerEditorView: View {
     @ObservedObject var store: Store
-    /// 新建时为 nil；编辑已有节点时传值
     let initialProtocol: ConnectionProtocol
     let profile: ServerProfile?
     @Environment(\.dismiss) private var dismiss
 
-    @State private var name = ""
-    @State private var uuid_ = ""
+    // 公共基础（CommonBasicFields）
+    @State private var remarks = ""
     @State private var address = ""
-    @State private var port = "443"
-    @State private var password = ""
-    @State private var cipher = "auto"
-    @State private var sni = ""
-    @State private var network = "tcp"
-    @State private var path = ""
-    @State private var alpn = ""
+    @State private var port = ""
+    // 协议字段
+    @State private var uuid_ = ""
+    @State private var security = "auto"
     @State private var flow = ""
+    @State private var password = ""
+    // WireGuard
+    @State private var secretKey = ""
     @State private var publicKey = ""
+    @State private var presharedKey = ""
+    @State private var reserved = ""
+    @State private var localAddress = ""
+    @State private var localMtu = "1420"
+    // Hysteria2
+    @State private var obfsPassword = ""
+    @State private var portHopping = ""
+    @State private var portHopInterval = ""
+    @State private var bandwidthDown = ""
+    @State private var bandwidthUp = ""
+    // 传输（CommonNetworkFields）
+    @State private var network = "tcp"
+    @State private var headerType = "none"
+    @State private var grpcMode = "gun"
+    @State private var xhttpMode = "auto"
+    @State private var host = ""
+    @State private var path = ""
+    // TLS（CommonStreamSecurityFields）
+    @State private var streamSecurity = ""
+    @State private var sni = ""
+    @State private var fingerPrint = ""
+    @State private var alpn = ""
+    @State private var allowInsecure = false
+
+    let networkOptions = ["tcp", "kcp", "ws", "httpupgrade", "xhttp", "h2", "grpc"]
+    let tcpHeaderOptions = ["none", "http"]
+    let kcpHeaderOptions = ["none", "srtp", "utp", "wechat-video", "dtls", "wireguard", "dns"]
+    let grpcModeOptions = ["gun", "multi"]
+    let xhttpModeOptions = ["auto", "packet-up", "stream-up", "stream-one"]
+    let streamSecurityOptions = ["", "tls", "reality"]
+    let utlsOptions = ["", "chrome", "firefox", "safari", "ios", "android", "edge", "360", "qq", "random", "randomized"]
+    let alpnOptions = ["", "h3", "h2", "http/1.1", "h3,h2,http/1.1", "h3,h2", "h2,http/1.1"]
+    let vmessSecurityOptions = ["chacha20-poly1305", "aes-128-gcm", "auto", "none", "zero"]
+    let ssSecurityOptions = ["aes-256-gcm", "aes-128-gcm", "chacha20-poly1305", "chacha20-ietf-poly1305", "xchacha20-poly1305", "xchacha20-ietf-poly1305", "none", "plain", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"]
+    let flowOptions = ["", "xtls-rprx-vision"]
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("基础") {
-                    TextField("名称（备注）", text: $name)
+                    TextField("别名 (remarks)", text: $remarks)
                     TextField("地址 (address)", text: $address)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("端口 (port)", text: $port)
                         .keyboardType(.numberPad)
                 }
-                if initialProtocol == .vmess || initialProtocol == .vless {
-                    Section("认证") {
-                        TextField(initialProtocol == .vmess ? "用户 ID (UUID)" : "用户 ID (UUID)", text: $uuid_)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        if initialProtocol == .vless {
-                            TextField("Flow (xtls-rprx-vision，可留空)", text: $flow)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        }
-                    }
-                    Section("传输") {
-                        Picker("网络 (network)", selection: $network) {
-                            ForEach(["tcp","ws","grpc","kcp"], id: \.self) { Text($0).tag($0) }
-                        }
-                        TextField("路径 (path / serviceName)", text: $path)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("SNI (serverName)", text: $sni)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("ALPN (逗号分隔，可留空)", text: $alpn)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    }
+                protocolSection
+                if initialProtocol != .hysteria2 && initialProtocol != .wireguard {
+                    networkSection
+                    streamSecuritySection
                 }
-                if initialProtocol == .shadowsocks || initialProtocol == .trojan || initialProtocol == .hysteria2 {
-                    Section("认证") {
-                        TextField(initialProtocol == .shadowsocks ? "密码 (password)" : "密码 (password)", text: $password)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        if initialProtocol == .shadowsocks {
-                            Picker("加密 (security)", selection: $cipher) {
-                                ForEach(["aes-128-gcm","aes-256-gcm","chacha20-poly1305","2022-blake3-aes-128-gcm","none"], id: \.self) { Text($0).tag($0) }
-                            }
-                        }
-                    }
-                    Section("传输") {
-                        Picker("网络 (network)", selection: $network) {
-                            ForEach(["tcp","ws","grpc"], id: \.self) { Text($0).tag($0) }
-                        }
-                        TextField("SNI (serverName)", text: $sni)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    }
+                if initialProtocol == .hysteria2 {
+                    hysteria2ExtraSection
                 }
                 if initialProtocol == .wireguard {
-                    Section("WireGuard") {
-                        TextField("私钥 (privateKey)", text: $password)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("公钥 (peerPublicKey)", text: $publicKey)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("预共享密钥 (presharedKey，可留空)", text: $uuid_)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    }
-                }
-                if initialProtocol == .socks || initialProtocol == .http {
-                    Section("认证") {
-                        TextField("用户名", text: $uuid_)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("密码", text: $password)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    }
+                    wireguardSection
                 }
             }
-            .navigationTitle(initialProtocol == .vless ? "添加 [VLESS]" :
-                             initialProtocol == .vmess ? "添加 [VMess]" :
-                             initialProtocol == .shadowsocks ? "添加 [Shadowsocks]" :
-                             initialProtocol == .trojan ? "添加 [Trojan]" :
-                             initialProtocol == .hysteria2 ? "添加 [Hysteria2]" :
-                             "添加 [\(initialProtocol.display)]")
+            .navigationTitle(titleText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -109,12 +93,182 @@ struct ServerEditorView: View {
         }
     }
 
+    var titleText: String {
+        let editing = profile != nil
+        let base = initialProtocol.display
+        return editing ? "编辑 \(base)" : "添加 [\(base)]"
+    }
+
+    // MARK: 协议字段（VLESS: id/encryption/flow；VMess: id/security；SS: password/security；Trojan: password；Hy2 特化段）
+    @ViewBuilder
+    var protocolSection: some View {
+        switch initialProtocol {
+        case .vmess:
+            Section("VMess") {
+                TextField("用户 ID (id)", text: $uuid_)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Picker("加密方式 (security)", selection: $security) {
+                    ForEach(vmessSecurityOptions, id: \.self) { Text($0).tag($0) }
+                }
+            }
+        case .vless:
+            Section("VLESS") {
+                TextField("用户 ID (id)", text: $uuid_)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("加密方式 (encryption)", text: $security)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Picker("流控 (flow)", selection: $flow) {
+                    ForEach(flowOptions, id: \.self) { Text($0.isEmpty ? "（空）" : $0).tag($0) }
+                }
+            }
+        case .shadowsocks:
+            Section("Shadowsocks") {
+                SecureField("密码", text: $password)
+                Picker("加密方式 (security)", selection: $security) {
+                    ForEach(ssSecurityOptions, id: \.self) { Text($0).tag($0) }
+                }
+            }
+        case .trojan:
+            Section("Trojan") {
+                SecureField("密码", text: $password)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+        case .hysteria2:
+            Section("Hysteria2") {
+                SecureField("密码", text: $password)
+            }
+        case .socks, .http:
+            Section("认证") {
+                TextField("用户名", text: $uuid_)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                SecureField("密码 (可选)", text: $password)
+            }
+        case .wireguard:
+            EmptyView()
+        }
+    }
+
+    // MARK: 传输协议（CommonNetworkFields 1:1）
+    var networkSection: some View {
+        Section("底层传输方式 (transport)") {
+            Picker("传输协议 (network)", selection: $network) {
+                ForEach(networkOptions, id: \.self) { Text($0).tag($0) }
+            }
+            // 伪装类型 / gRPC 模式
+            if network == "tcp" || network == "kcp" {
+                Picker("伪装类型 (type)", selection: $headerType) {
+                    ForEach(network == "tcp" ? tcpHeaderOptions : kcpHeaderOptions, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            if network == "grpc" {
+                Picker("gRPC 传输模式 (mode)", selection: $grpcMode) {
+                    ForEach(grpcModeOptions, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            if network == "xhttp" {
+                Picker("XHTTP 模式", selection: $xhttpMode) {
+                    ForEach(xhttpModeOptions, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            // 伪装域名 / host
+            if network == "grpc" {
+                TextField("gRPC Authority", text: $host)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            } else {
+                TextField(network == "ws" ? "ws host" : "伪装域名 (host)", text: $host)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+            // path
+            if network != "kcp" {
+                TextField(pathLabel, text: $path)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+        }
+    }
+
+    var pathLabel: String {
+        switch network {
+        case "ws": return "ws path"
+        case "httpupgrade": return "httpupgrade path"
+        case "xhttp": return "xhttp path"
+        case "h2": return "h2 path"
+        case "grpc": return "gRPC serviceName"
+        default: return "path"
+        }
+    }
+
+    // MARK: TLS（CommonStreamSecurityFields 1:1）
+    var streamSecuritySection: some View {
+        Section("TLS") {
+            Picker("TLS", selection: $streamSecurity) {
+                Text("（不启用）").tag("")
+                ForEach(streamSecurityOptions.filter { !$0.isEmpty }, id: \.self) { Text($0).tag($0) }
+            }
+            if !streamSecurity.isEmpty {
+                TextField("SNI", text: $sni)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Picker("Fingerprint", selection: $fingerPrint) {
+                    ForEach(utlsOptions, id: \.self) { Text($0.isEmpty ? "（空）" : $0).tag($0) }
+                }
+                if streamSecurity == "tls" {
+                    Toggle("跳过证书验证 (allowInsecure)", isOn: $allowInsecure)
+                    Picker("ALPN", selection: $alpn) {
+                        ForEach(alpnOptions, id: \.self) { Text($0.isEmpty ? "（空）" : $0).tag($0) }
+                    }
+                }
+                if streamSecurity == "reality" {
+                    TextField("PublicKey", text: $publicKey)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+            }
+        }
+    }
+
+    // MARK: Hysteria2 特化（v2rayNG ServerHysteria2Activity）
+    var hysteria2ExtraSection: some View {
+        Section("Hysteria2 高级") {
+            TextField("混淆密码", text: $obfsPassword)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("跳跃端口 (会覆盖服务器端口)", text: $portHopping)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("端口跳跃间隔 (秒)", text: $portHopInterval)
+                .keyboardType(.numberPad)
+            TextField("带宽下行 (支持的单位 k/m/g/t)", text: $bandwidthDown)
+            TextField("带宽上行 (支持的单位 k/m/g/t)", text: $bandwidthUp)
+            Toggle("跳过证书验证 (allowInsecure)", isOn: $allowInsecure)
+            TextField("SNI", text: $sni)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+        }
+    }
+
+    // MARK: WireGuard（v2rayNG ServerWireguardActivity）
+    var wireguardSection: some View {
+        Section("WireGuard") {
+            TextField("SecretKey", text: $secretKey)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("PublicKey", text: $publicKey)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("PreSharedKey（可选）", text: $presharedKey)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("Reserved (可选，逗号隔开)", text: $reserved)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("本地地址 (可选 IPv4/IPv6，逗号隔开)", text: $localAddress)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            TextField("MTU（可选，默认 1420）", text: $localMtu)
+                .keyboardType(.numberPad)
+        }
+    }
+
     private func load() {
         if let p = profile {
-            name = p.name; address = p.address; port = String(p.port)
-            uuid_ = p.uuid; password = p.password; cipher = p.cipher
-            sni = p.sni; network = p.network; path = p.path
-            alpn = p.alpn; flow = p.flow; publicKey = p.publicKey
+            remarks = p.name; address = p.address; port = String(p.port)
+            uuid_ = p.uuid; security = p.cipher.isEmpty ? "auto" : p.cipher
+            flow = p.flow; password = p.password
+            network = p.network.isEmpty ? "tcp" : p.network
+            host = p.sni; path = p.path
+            sni = p.sni; alpn = p.alpn
+            streamSecurity = p.sni.isEmpty ? "" : "tls"
+            publicKey = p.publicKey
         } else {
             network = "tcp"
         }
@@ -122,25 +276,36 @@ struct ServerEditorView: View {
 
     private func save() {
         if var p = profile {
-            p.name = name.isEmpty ? p.name : name
-            p.address = address
-            p.port = Int(port) ?? p.port
-            p.uuid = uuid_; p.password = password; p.cipher = cipher
-            p.sni = sni; p.network = network; p.path = path
-            p.alpn = alpn; p.flow = flow; p.publicKey = publicKey
+            apply(to: &p)
             store.updateServer(p)
         } else {
-            let p = ServerProfile(groupID: store.displayGroupID(),
-                                   name: name.isEmpty ? address : name,
+            var p = ServerProfile(groupID: store.displayGroupID(),
+                                   name: remarks.isEmpty ? address : remarks,
                                    protocolType: initialProtocol,
                                    address: address,
                                    port: Int(port) ?? 443,
-                                   uuid: uuid_, password: password, cipher: cipher,
+                                   uuid: uuid_, password: password, cipher: security,
                                    sni: sni, network: network, path: path,
                                    alpn: alpn, flow: flow, publicKey: publicKey,
                                    settingsJson: "", remark: "", raw: "")
+            apply(to: &p)
             store.addServer(p)
         }
         dismiss()
+    }
+
+    private func apply(to p: inout ServerProfile) {
+        p.name = remarks.isEmpty ? p.address : remarks
+        p.address = address
+        p.port = Int(port) ?? p.port
+        p.uuid = uuid_
+        p.cipher = security
+        p.flow = flow
+        p.password = password
+        p.network = network
+        p.path = path
+        p.sni = !sni.isEmpty ? sni : host
+        p.alpn = alpn
+        p.publicKey = publicKey
     }
 }
