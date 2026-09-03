@@ -44,6 +44,15 @@ struct ContentView: View {
                     .background(Color(.systemBackground))
                     .shadow(color: .black.opacity(0.3), radius: 14, x: 4)
                     .transition(.move(edge: .leading))
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onEnded { g in
+                                // 左滑关闭抽屉（水平位移超过 60 且向左）
+                                if g.translation.width < -60 {
+                                    withAnimation(.easeInOut(duration: 0.25)) { drawerOpen = false }
+                                }
+                            }
+                    )
             }
         }
         .animation(.easeInOut(duration: 0.25), value: drawerOpen)

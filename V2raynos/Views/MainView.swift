@@ -10,6 +10,7 @@ struct MainView: View {
 
     @State private var showAdd = false
     @State private var showQR = false
+    @State private var importError: String? = nil
     @State private var showRename: ServerGroup? = nil
     @State private var renameText = ""
     @State private var sortMode = SortMode.default
@@ -47,11 +48,11 @@ struct MainView: View {
                     .padding(.bottom, 90)
                 }
 
-                // FAB
+                // FAB：右下角蓝色圆形 + 阴影
                 Menu {
+                    Button { showQR = true } label: { Label("扫描二维码", systemImage: "qrcode.viewfinder") }
                     Button { importClipboard() } label: { Label("剪贴板导入", systemImage: "doc.on.clipboard") }
-                    Button { showAdd = true } label: { Label("手动添加", systemImage: "square.and.pencil") }
-                    Button { showQR = true } label: { Label("扫码添加", systemImage: "qrcode.viewfinder") }
+                    Button { showAdd = true } label: { Label("手动输入", systemImage: "square.and.pencil") }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 24, weight: .medium))
@@ -71,7 +72,6 @@ struct MainView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    // 测速按钮（明显）
                     Button { tester.testAll(servers) } label: {
                         HStack(spacing: 4) {
                             if tester.testing { ProgressView().scaleEffect(0.8) }
@@ -93,6 +93,11 @@ struct MainView: View {
             .sheet(isPresented: $showAdd) { AddServerView(store: store) }
             .sheet(isPresented: $showQR) {
                 QRScannerView { code in handleScan(code) }
+            }
+            .alert("导入失败", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(importError ?? "")
             }
             .alert("分组改名", isPresented: Binding(get: { showRename != nil }, set: { if !$0 { showRename = nil } })) {
                 TextField("新名称", text: $renameText)
@@ -194,33 +199,50 @@ struct MainView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
     }
 
-    // MARK: - 底部连接栏（大启动按钮）
+    // MARK: - 底部连接栏（V 形按钮 + 状态色联动）
+
+    /// 状态色：未连接灰 / 已连接绿 / 断开中或异常红
+    var statusColor: Color {
+        switch vpn.status {
+        case .connected: return .green
+        case .connecting, .reasserting: return .gray
+        case .disconnecting: return .red
+        case .invalid, .disconnected: return .gray
+        default: return .red
+        }
+    }
 
     var bottomBar: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(current?.name ?? "未选择节点").font(.subheadline).bold().lineLimit(1)
-                Text(vpn.status == .connected ? "运行中" : vpn.status == .connecting ? "连接中…" : "已停止")
+                Text(statusText)
                     .font(.caption)
-                    .foregroundColor(vpn.status == .connected ? .green : .secondary)
+                    .foregroundColor(statusColor == .green ? .green : .secondary)
             }
             Spacer()
+            // V 字形（勾形）启动开关
             Button(action: toggle) {
-                HStack(spacing: 8) {
-                    Image(systemName: vpn.status == .connected ? "stop.fill" : "power")
-                    Text(vpn.status == .connected ? "停止" : "启动 VPN")
-                        .font(.subheadline.bold())
-                }
-                .padding(.horizontal, 18).padding(.vertical, 12)
-                .background(Capsule().fill(vpn.status == .connected ? Color.red : Color.blue))
-                .foregroundColor(.white)
-                .shadow(color: (vpn.status == .connected ? Color.red : Color.blue).opacity(0.4), radius: 6, y: 3)
+                Image(systemName: vpn.status == .connected ? "checkmark.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(statusColor)
             }
             .disabled(current == nil && vpn.status != .connected)
             .opacity(current == nil && vpn.status != .connected ? 0.4 : 1)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.bar)
+    }
+
+    var statusText: String {
+        switch vpn.status {
+        case .connected: return "运行中"
+        case .connecting: return "连接中…"
+        case .disconnecting: return "断开中…"
+        case .reasserting: return "重连中…"
+        case .invalid: return "配置无效"
+        default: return "已停止"
+        }
     }
 
     // MARK: - 动作
@@ -234,30 +256,52 @@ struct MainView: View {
         }
     }
 
+    /// 剪贴板导入：do-catch 容错 + 失败 Alert
     func importClipboard() {
-        if let s = UIPasteboard.general.string {
-            store.importLinks(s, into: groupID)
+        guard let text = UIPasteboard.general.string, !text.isEmpty else {
+            importError = "剪贴板为空"
+            return
+        }
+        do {
+            try importText(text)
+        } catch {
+            importError = "节点格式不支持或解析失败"
         }
     }
 
-    /// 扫码结果分流：分享链接→节点；URL→订阅
-    func handleScan(_ code: String) {
-        if code.contains("://") && !code.hasPrefix("http") {
-            if let p = try? ProfileParser.parse(code, groupID: groupID) { store.addServer(p) }
-        } else if code.hasPrefix("http") {
-            let sub = Subscription(name: "订阅-扫码", url: code, groupID: groupID)
+    /// 导入文本（分享链接或订阅 URL）
+    private func importText(_ text: String) throws {
+        if text.contains("://") && !text.hasPrefix("http") {
+            _ = try ProfileParser.parse(text, groupID: groupID) // 抛错即失败
+            store.importLinks(text, into: groupID)
+            return
+        }
+        if text.hasPrefix("http") {
+            let sub = Subscription(name: "订阅-剪贴板", url: text, groupID: groupID)
             store.addSubscription(sub)
-            store.updateSubscriptions(from: code)
+            store.updateSubscriptions(from: text)
+            return
+        }
+        throw ProfileParseError.invalid("unknown")
+    }
+
+    /// 扫码结果分流
+    func handleScan(_ code: String) {
+        do {
+            try importText(code)
+        } catch {
+            importError = "节点格式不支持或解析失败"
         }
     }
 }
 
-// MARK: - 手动添加
+// MARK: - 手动输入（do-catch + dismiss + Alert）
 
 struct AddServerView: View {
     @ObservedObject var store: Store
     @Environment(\.dismiss) private var dismiss
     @State private var uri = ""
+    @State private var error: String? = nil
     var body: some View {
         NavigationStack {
             Form {
@@ -270,19 +314,29 @@ struct AddServerView: View {
                     if let s = UIPasteboard.general.string { uri = s }
                 }
             }
-            .navigationTitle("手动添加")
+            .navigationTitle("手动输入")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("导入") {
-                        if let p = try? ProfileParser.parse(uri, groupID: store.displayGroupID()) {
-                            store.addServer(p); dismiss()
+                        do {
+                            let p = try ProfileParser.parse(uri, groupID: store.displayGroupID())
+                            store.addServer(p)
+                            dismiss()
+                        } catch {
+                            self.error = "节点格式不支持或解析失败"
                         }
                     }
+                    .disabled(uri.isEmpty)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
+            }
+            .alert("导入失败", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(error ?? "")
             }
         }
     }

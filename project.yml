@@ -29,7 +29,7 @@ targets:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-        NSCameraUsageDescription: 扫描二维码以添加节点或订阅
+        NSCameraUsageDescription: 需要使用相机扫描二维码
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.v2raynos.app
