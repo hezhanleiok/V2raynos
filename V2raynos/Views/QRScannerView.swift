@@ -46,7 +46,7 @@ struct QRScannerView: View {
                     Button("关闭") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showAlbum, onDismiss: { if albumImage != nil && !albumError { } }) {
+            .sheet(isPresented: $showAlbum) {
                 PhotosPicker(selection: $albumImage, matching: .images) {
                     Text("选择二维码图片")
                 }
@@ -80,27 +80,27 @@ struct QRScannerView: View {
     }
 }
 
-/// 实时相机取景
+/// 实时相机取景（含 layer 尺寸同步修复）
 struct CameraPreview: View {
     var onCode: (String) -> Void
     var onDenied: () -> Void
     @State private var session = AVCaptureSession()
-    @State private var previewLayer: AVCaptureVideoPreviewLayer?
+    @State private var started = false
 
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                Color.black
-                if let layer = previewLayer {
-                    CameraLayerView(layer: layer)
+            CameraLayerView(session: session, onCode: onCode, onDenied: onDenied, size: geo.size)
+                .onAppear {
+                    if !started {
+                        started = true
+                        setupCamera()
+                    }
                 }
-            }
-            .onAppear { setupCamera(geo: geo) }
-            .onDisappear { session.stopRunning() }
+                .onDisappear { session.stopRunning() }
         }
     }
 
-    func setupCamera(geo: GeometryProxy) {
+    private func setupCamera() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized: startSession()
         case .notDetermined:
@@ -111,7 +111,7 @@ struct CameraPreview: View {
         }
     }
 
-    func startSession() {
+    private func startSession() {
         DispatchQueue.global().async {
             guard let device = AVCaptureDevice.default(for: .video),
                   let input = try? AVCaptureDeviceInput(device: device),
@@ -124,27 +124,63 @@ struct CameraPreview: View {
             let output = AVCaptureMetadataOutput()
             if session.canAddOutput(output) { session.addOutput(output) }
             session.commitConfiguration()
-            let layer = AVCaptureVideoPreviewLayer(session: session)
-            layer.videoGravity = .resizeAspectFill
-            DispatchQueue.main.async {
-                previewLayer = layer
-                session.startRunning()
-            }
             output.setMetadataObjectsDelegate(QRDelegate(onCode: onCode), queue: .main)
             output.metadataObjectTypes = [.qr]
+            session.startRunning()
         }
     }
 }
 
+/// 关键修复：自定义 UIView，在 layoutSubviews 强制同步 previewLayer.frame
 struct CameraLayerView: UIViewRepresentable {
-    let layer: AVCaptureVideoPreviewLayer
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView()
-        v.layer.addSublayer(layer)
+    let session: AVCaptureSession
+    var onCode: (String) -> Void
+    var onDenied: () -> Void
+    var size: CGSize
+
+    func makeUIView(context: Context) -> PreviewView {
+        let v = PreviewView()
+        v.session = session
+        v.onCode = onCode
+        v.onDenied = onDenied
+        v.backgroundColor = .black
         return v
     }
-    func updateUIView(_ uiView: UIView, context: Context) {
-        layer.frame = uiView.bounds
+
+    func updateUIView(_ uiView: PreviewView, context: Context) {
+        uiView.session = session
+    }
+
+    /// 继承 UIView，layoutSubviews 时强制 previewLayer.frame = bounds
+    final class PreviewView: UIView {
+        var session: AVCaptureSession? {
+            didSet {
+                guard let s = session, previewLayer.session == nil else { return }
+                previewLayer.session = s
+            }
+        }
+        var onCode: ((String) -> Void)?
+        var onDenied: (() -> Void)?
+
+        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+
+        var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            previewLayer.videoGravity = .resizeAspectFill
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+            previewLayer.videoGravity = .resizeAspectFill
+        }
+
+        /// 每次布局都强制把 previewLayer 撑满整个视图
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            previewLayer.frame = self.bounds
+        }
     }
 }
 

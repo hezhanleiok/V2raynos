@@ -11,6 +11,8 @@ struct MainView: View {
     @State private var showAdd = false
     @State private var showQR = false
     @State private var importError: String? = nil
+    @State private var showError = false
+    @State private var showVpnError = false
     @State private var showRename: ServerGroup? = nil
     @State private var renameText = ""
     @State private var sortMode = SortMode.default
@@ -94,10 +96,18 @@ struct MainView: View {
             .sheet(isPresented: $showQR) {
                 QRScannerView { code in handleScan(code) }
             }
-            .alert("导入失败", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+            .alert("导入失败", isPresented: $showError) {
                 Button("好", role: .cancel) {}
             } message: {
-                Text(importError ?? "")
+                Text(importError ?? "节点格式不支持或解析失败")
+            }
+            .alert("VPN 连接失败", isPresented: $showVpnError) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(vpn.lastError ?? "连接被系统拒绝，请检查描述文件")
+            }
+            .onChange(of: vpn.lastError) { err in
+                if err != nil { showVpnError = true }
             }
             .alert("分组改名", isPresented: Binding(get: { showRename != nil }, set: { if !$0 { showRename = nil } })) {
                 TextField("新名称", text: $renameText)
@@ -235,6 +245,7 @@ struct MainView: View {
     }
 
     var statusText: String {
+        if let err = vpn.lastError, vpn.status != .connected { return err }
         switch vpn.status {
         case .connected: return "运行中"
         case .connecting: return "连接中…"
@@ -260,12 +271,14 @@ struct MainView: View {
     func importClipboard() {
         guard let text = UIPasteboard.general.string, !text.isEmpty else {
             importError = "剪贴板为空"
+            showError = true
             return
         }
         do {
             try importText(text)
         } catch {
             importError = "节点格式不支持或解析失败"
+            showError = true
         }
     }
 
@@ -291,6 +304,7 @@ struct MainView: View {
             try importText(code)
         } catch {
             importError = "节点格式不支持或解析失败"
+            showError = true
         }
     }
 }
@@ -302,13 +316,16 @@ struct AddServerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var uri = ""
     @State private var error: String? = nil
+    @State private var showError = false
     var body: some View {
         NavigationStack {
             Form {
                 Section("粘贴分享链接") {
-                    TextField("vmess:// vless:// ss:// trojan:// hysteria2:// ...", text: $uri)
+                    TextField("vmess:// vless:// ss:// trojan:// hysteria2:// ...（请勿输入 http 订阅链接）", text: $uri)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Text("此页仅导入单条节点分享链接；订阅请到抽屉「订阅」页添加")
+                        .font(.caption).foregroundColor(.secondary)
                 }
                 Button("从剪贴板填入") {
                     if let s = UIPasteboard.general.string { uri = s }
@@ -325,6 +342,7 @@ struct AddServerView: View {
                             dismiss()
                         } catch {
                             self.error = "节点格式不支持或解析失败"
+                            self.showError = true
                         }
                     }
                     .disabled(uri.isEmpty)
@@ -333,10 +351,10 @@ struct AddServerView: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .alert("导入失败", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            .alert("导入失败", isPresented: $showError) {
                 Button("好", role: .cancel) {}
             } message: {
-                Text(error ?? "")
+                Text(error ?? "节点格式不支持或解析失败")
             }
         }
     }
