@@ -369,6 +369,24 @@ struct MainView: View {
         }
     }
 
+    /// 扫码结果分流：http → 订阅；分享链接 → 单节点；失败弹 Alert
+    func handleScan(_ code: String) {
+        let text = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("http://") || text.hasPrefix("https://") {
+            let sub = Subscription(name: "订阅-扫码", url: text, groupID: groupID)
+            store.addSubscription(sub)
+            store.updateSubscriptions(from: text)
+            return
+        }
+        do {
+            _ = try ProfileParser.parse(text, groupID: groupID)
+            store.importLinks(text, into: groupID)
+        } catch {
+            addServerError = "节点格式不支持或解析失败"
+            showAddServerError = true
+        }
+    }
+
     /// 本地导入：暂以剪贴板占位（iOS 没有公共外部存储）
     func importFromFile() {
         addServerError = "iOS 沙盒限制，暂不支持本地文件导入；请用剪贴板/二维码/订阅"
