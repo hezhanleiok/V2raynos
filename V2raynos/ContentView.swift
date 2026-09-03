@@ -83,18 +83,16 @@ struct DrawerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 头部
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(spacing: 10) {
                 Image("logo")
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                Text("V2raynos").font(.title2).bold()
-                Text("Xray-core · hev-socks5-tunnel")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(width: 76, height: 76)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                Text("V2raynos").font(.title3.bold())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
             .background(Color.blue.opacity(0.12))
 
             ForEach([DrawerPage.subscriptions, .routing, .assets, .settings, .logcat, .backup, .about], id: \.self) { p in
@@ -119,13 +117,6 @@ struct DrawerView: View {
             }
 
             Spacer()
-            VStack(alignment: .leading, spacing: 4) {
-                Text("v2rayNG for iOS")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("内核 Xray-core")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-            .padding(20)
         }
     }
 }

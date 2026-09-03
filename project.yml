@@ -48,6 +48,7 @@ targets:
     sources:
       - path: PacketTunnel
       - path: V2raynos/Services/XrayBridge.swift
+      - path: V2raynos/Services/AppSettings.swift
     dependencies:
       - framework: frameworks/XrayCore.xcframework
     info:

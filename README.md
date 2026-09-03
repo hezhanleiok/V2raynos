@@ -4,7 +4,7 @@
   <img src="V2raynos/Resources/logo.png" width="120" alt="V2raynos" />
 </p>
 
-**iOS 端 v2rayNG 复刻**：Xray-core 内核 + hev-socks5-tunnel TUN 路由 + SwiftUI iOS 风格 UI。1:1 复刻 v2rayNG 的交互与功能，云端构建未签名 `.ipa`，适配**未越狱 iOS 16+ 设备**（Sideloadly 侧载）。
+**iOS 端 v2rayNG 复刻**：Xray-core 内核 + hev-socks5-tunnel TUN 路由 + SwiftUI iOS 风格 UI。1:1 复刻 v2rayNG 的交互与功能，GitHub Actions 云端构建 `.ipa`（后期提供正式签名分发，当前为未签名构建产物）。
 
 ## 功能特性
 
@@ -23,14 +23,10 @@
 - **延迟测试**：真连接测试（临时 Xray http 入站 → 代理访问 generate_204）+ TCPing 兜底
 - **VPN 管理**：NETunnelProviderManager（loadAllFromPreferences → startVPNTunnel(options:)），Packet Tunnel 扩展 + KVC 桥接 TUN fd
 
-## 系统要求（未越狱侧载）
+## 系统要求
 
-| 项目 | 要求 |
-|---|---|
-| 设备 | 未越狱 iPhone，iOS 16.0+ |
-| 工具 | Sideloadly（Windows/Mac/Linux） |
-| 账号 | 免费 Apple ID 即可（7 天有效期，到期重签） |
-| 说明 | 免费 Apple ID 侧载的 Network Extension 权限由 Sideloadly 注入；首次启动 VPN 时系统会弹授权 |
+- iPhone / iPad，iOS 16.0+
+- 首次启动 VPN 时系统会弹出「添加 VPN 配置」授权，允许即可
 
 ## 构建（GitHub Actions 云端，无需 Mac）
 
@@ -43,17 +39,6 @@
    - `build_ipa.sh` → `V2raynos-unsigned.ipa`（Artifact 下载）
 
 构建约 5 分钟（Xray-core 首次约 25 分钟，之后有 go.mod 缓存）。
-
-## 安装（Sideloadly，未越狱）
-
-1. 下载 Actions 构建产物 `V2raynos-unsigned.ipa`
-2. [Sideloadly](https://sideloadly.io/) 连接 iPhone，拖入 ipa，填你的 Apple ID（免费账号即可）
-3. Sideloadly 自动用你的 Apple ID 重签 + 注入 Network Extension 权限 → 安装到设备
-4. iPhone：设置 → 通用 → VPN 与设备管理 → 信任你的 Apple ID 描述文件
-5. 打开 APP → 添加节点/订阅 → 点右下角圆形按钮 → 首次弹「V2raynos 想添加 VPN 配置」→ **允许**
-6. 状态变绿（已连接）后，Safari 访问 `ipinfo.io` 验证出口 IP 已变化
-
-> **注意**：免费 Apple ID 签名 7 天过期，到期后需用 Sideloadly 重签安装；数据保留在 App 沙盒内不受影响。
 
 ## 首次使用建议
 

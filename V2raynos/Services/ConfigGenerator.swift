@@ -1,18 +1,29 @@
 import Foundation
 
-/// 把 ServerProfile + 路由 转成 Xray 能跑的 JSON 配置字符串
+/// 把 ServerProfile + 设置 + 路由 转成 Xray 能跑的 JSON 配置字符串
 struct ConfigGenerator {
-    static func xrayJSON(profile: ServerProfile, localPort: Int = 10808, routing: [RoutingRule] = []) -> String {
+    /// 全参版：所有 Settings 开关真实生效
+    static func xrayJSON(profile: ServerProfile, settings: AppSettings = AppSettings.load(),
+                         routing: [RoutingRule] = [], domainStrategy: String = "IPIfNonMatch") -> String {
+        let listen = settings.allowLAN ? "0.0.0.0" : "127.0.0.1"
+        let sniffing: [String: Any] = [
+            "enabled": settings.sniffing,
+            "routeOnly": settings.routeOnly,
+            "destOverride": ["http", "tls", "quic"],
+        ]
+        let inbounds: [[String: Any]] = [
+            ["listen": listen, "port": settings.localPort, "protocol": "socks",
+             "settings": ["udp": settings.socksUDP], "sniffing": sniffing],
+            ["listen": "127.0.0.1", "port": settings.localPort + 1, "protocol": "dokodemo-door",
+             "settings": ["address": "8.8.8.8", "port": 53, "network": "tcp,udp"], "sniffing": sniffing],
+        ]
         let outbounds: [Any] = [ outboundDict(profile) ] + extraOutbounds()
         let config: [String: Any] = [
-            "log": ["loglevel": "warning"],
-            "inbounds": [
-                ["listen": "127.0.0.1", "port": localPort, "protocol": "socks", "settings": ["udp": true]],
-                ["listen": "127.0.0.1", "port": localPort + 1, "protocol": "dokodemo-door", "settings": ["address": "8.8.8.8", "port": 53, "network": "tcp,udp"]],
-            ],
+            "log": ["loglevel": settings.logLevel],
+            "inbounds": inbounds,
             "outbounds": outbounds,
-            "routing": routingDict(routing),
-            "dns": ["servers": ["1.1.1.1", "8.8.8.8"]],
+            "routing": routingDict(routing, domainStrategy: domainStrategy),
+            "dns": ["servers": [settings.remoteDNS, settings.directDNS]],
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: config, options: []),
               let s = String(data: data, encoding: .utf8) else { return "{}" }
@@ -75,22 +86,23 @@ struct ConfigGenerator {
 
     private static func streamDict(_ p: ServerProfile) -> [String: Any] {
         var sd: [String: Any] = ["network": p.network, "security": p.sni.isEmpty ? "none" : "tls"]
-        if !p.sni.isEmpty { sd["tlsSettings"] = ["serverName": p.sni, "alpn": p.alpn.isEmpty ? ["h2", "http/1.1"] : p.alpn.split(separator: ",").map { String($0) }] }
-        if p.network == "ws" { sd["wsSettings"] = ["path": p.path, "headers": ["Host": p.address]] }
+        if !p.sni.isEmpty { sd["tlsSettings"] = ["serverName": p.sni, "allowInsecure": false, "alpn": p.alpn.isEmpty ? ["h2", "http/1.1"] : p.alpn.split(separator: ",").map { String($0) }] }
+        if p.network == "ws" { sd["wsSettings"] = ["path": p.path, "headers": ["Host": p.sni.isEmpty ? p.address : p.sni]] }
         if p.network == "grpc" { sd["grpcSettings"] = ["serviceName": p.path] }
         if p.network == "kcp" { sd["kcpSettings"] = ["mtu": 1350] }
         return sd
     }
 
     private static func extraOutbounds() -> [Any] {
-        [["protocol": "freedom", "tag": "direct"], ["protocol": "blackhole", "tag": "block"]]
+        let arr: [[String: Any]] = [["protocol": "freedom", "tag": "direct"], ["protocol": "blackhole", "tag": "block"]]
+        return arr as [Any]
     }
 
-    private static func routingDict(_ rules: [RoutingRule]) -> [String: Any] {
+    private static func routingDict(_ rules: [RoutingRule], domainStrategy: String) -> [String: Any] {
         var list: [[String: Any]] = rules.filter { $0.enabled }.map {
             ["type": "field", "domain": [$0.domain], "outboundTag": $0.outbound]
         }
         list.append(["type": "field", "ip": ["geoip:private"], "outboundTag": "direct"])
-        return ["domainStrategy": "IPIfNonMatch", "rules": list]
+        return ["domainStrategy": domainStrategy, "rules": list]
     }
 }

@@ -32,7 +32,7 @@ final class VpnManager: ObservableObject {
                 let proto = NETunnelProviderProtocol()
                 proto.providerBundleIdentifier = self.tunnelBundleID
                 proto.serverAddress = "v2raynos"
-                proto.providerConfiguration = ["xrayConfig": "{}"]
+                proto.providerConfiguration = ["xrayConfig": "{}", "settings": AppSettings.load().settingsJSON]
                 m.protocolConfiguration = proto
                 m.localizedDescription = "V2raynos"
                 m.isEnabled = true
@@ -70,7 +70,10 @@ final class VpnManager: ObservableObject {
         let proto = NETunnelProviderProtocol()
         proto.providerBundleIdentifier = tunnelBundleID
         proto.serverAddress = "v2raynos"
-        proto.providerConfiguration = ["xrayConfig": configJSON]
+        proto.providerConfiguration = [
+            "xrayConfig": configJSON,
+            "settings": AppSettings.load().settingsJSON,
+        ]
         m.protocolConfiguration = proto
         m.localizedDescription = "V2raynos"
         m.isEnabled = true

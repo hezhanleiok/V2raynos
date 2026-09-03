@@ -1,13 +1,10 @@
 import SwiftUI
 
-/// 路由设置：域名策略 + 规则列表（1:1 v2rayNG）
+/// 路由设置：域名策略 + 规则列表（规则持久化 + 真实作用于 Xray 配置）
 struct RoutingView: View {
     @EnvironmentObject var store: Store
-    @State private var domainStrategy = "IPIfNonMatch"
-    @State private var rules: [RoutingRule] = [
-        RoutingRule(domain: "geosite:google", outbound: "proxy"),
-        RoutingRule(domain: "geosite:cn", outbound: "direct"),
-    ]
+    @State private var domainStrategy: String = UserDefaults.standard.string(forKey: "domainStrategy") ?? "IPIfNonMatch"
+    @State private var rules: [RoutingRule] = RoutingRule.load()
     @State private var editingRule: RoutingRule? = nil
 
     var body: some View {
@@ -18,6 +15,9 @@ struct RoutingView: View {
                         Text("AsIs").tag("AsIs")
                         Text("IPIfNonMatch").tag("IPIfNonMatch")
                         Text("IPOnDemand").tag("IPOnDemand")
+                    }
+                    .onChange(of: domainStrategy) { v in
+                        UserDefaults.standard.set(v, forKey: "domainStrategy")
                     }
                 }
                 Section("规则列表") {
@@ -44,22 +44,32 @@ struct RoutingView: View {
                             Toggle("", isOn: $r.enabled).labelsHidden().frame(width: 44)
                         }
                     }
-                    .onDelete { rules.remove(atOffsets: $0) }
+                    .onDelete { rules.remove(atOffsets: $0); RoutingRule.save(rules) }
                     Button {
-                        rules.append(RoutingRule(domain: "google.com", outbound: "proxy"))
+                        editingRule = RoutingRule(domain: "google.com", outbound: "proxy")
                     } label: {
                         Label("添加规则", systemImage: "plus")
                     }
+                }
+                Section {
+                    Text("规则真实写入 Xray 路由：proxy 走代理 / direct 直连 / block 屏蔽，重启 VPN 后生效")
+                        .font(.caption).foregroundColor(.secondary)
                 }
             }
             .navigationTitle("路由设置")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $editingRule) { rule in
                 RuleEditorView(rule: rule) { updated in
-                    if let i = rules.firstIndex(where: { $0.id == updated.id }) { rules[i] = updated }
+                    if let i = rules.firstIndex(where: { $0.id == updated.id }) {
+                        rules[i] = updated
+                    } else {
+                        rules.append(updated)
+                    }
+                    RoutingRule.save(rules)
                     editingRule = nil
                 }
             }
+            .onChange(of: rules) { _ in RoutingRule.save(rules) }
         }
     }
 
@@ -78,7 +88,7 @@ struct RoutingView: View {
     }
 }
 
-/// 规则编辑器
+/// 规则编辑器（新建/编辑共用）
 struct RuleEditorView: View {
     let rule: RoutingRule
     var onSave: (RoutingRule) -> Void
@@ -93,6 +103,8 @@ struct RuleEditorView: View {
                     TextField("域名 / geosite:xxx / geoip:xxx", text: $domain)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                    Text("示例：geosite:google、geosite:cn、google.com、geoip:cn")
+                        .font(.caption).foregroundColor(.secondary)
                 }
                 Section("出站策略") {
                     Picker("出站", selection: $outbound) {
@@ -114,13 +126,15 @@ struct RuleEditorView: View {
                         onSave(r)
                         dismiss()
                     }
+                    .disabled(domain.isEmpty)
                 }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
             }
             .onAppear {
-                domain = rule.domain; outbound = rule.outbound
+                domain = rule.domain
+                outbound = rule.outbound
             }
         }
     }

@@ -7,23 +7,29 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var bridge: XrayBridge?
     private var hevThread: Thread?
 
-    /// 本地 Xray socks 入站端口（与 ConfigGenerator 默认一致，hev 指向它）
-    private let socksPort = 10808
-
     override func startTunnel(options: [String : NSObject]?) async throws {
         guard let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol,
-              let cfg = tunnelProtocol.providerConfiguration?["xrayConfig"] as? String else {
+              let cfg = tunnelProtocol.providerConfiguration?["xrayConfig"] as? String,
+              let settingsStr = tunnelProtocol.providerConfiguration?["settings"] as? String else {
             NSLog("[v2raynos] 拿到配置失败")
             throw NSError(domain: "v2raynos", code: 1, userInfo: [NSLocalizedDescriptionKey: "no xray config"])
         }
 
+        // 全局设置（App 端 AppSettings 序列化传来，真实生效）
+        let app = AppSettings.fromJSON(settingsStr)
+        if !app.hevTun {
+            NSLog("[v2raynos] Hev TUN 被禁用：TUN 无法桥接，拒绝启动")
+            throw NSError(domain: "v2raynos", code: 3, userInfo: [NSLocalizedDescriptionKey: "Hev TUN 已禁用：iOS 上 TUN 桥接必须启用 Hev TUN，请到 设置 → Hev TUN 打开"])
+        }
+        let socksPort = app.localPort
+
         // 1) 建立虚拟网卡网络设置（对应 v2rayNG 的 VpnService）
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "198.18.0.1")
-        settings.mtu = NSNumber(value: 1500)
+        settings.mtu = NSNumber(value: app.mtu)
         let ipv4 = NEIPv4Settings(addresses: ["198.18.0.2"], subnetMasks: ["255.255.0.0"])
         ipv4.includedRoutes = [NEIPv4Route(destinationAddress: "0.0.0.0", subnetMask: "0.0.0.0")]
         settings.ipv4Settings = ipv4
-        settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
+        settings.dnsSettings = NEDNSSettings(servers: [app.remoteDNS, app.directDNS])
 
         // 2) 应用网络设置（async/await）
         try await setTunnelNetworkSettings(settings)
@@ -45,7 +51,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             NSLog("[v2raynos] 无法获取 TUN fd")
             throw NSError(domain: "v2raynos", code: 2, userInfo: [NSLocalizedDescriptionKey: "no tun fd"])
         }
-        let yaml = hevConfig()
+        let yaml = hevConfig(port: socksPort, logLevel: app.logLevel)
         let thread = Thread { [weak self] in
             guard self != nil else { return }
             let bytes = Array(yaml.utf8)
@@ -69,7 +75,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     /// hev 配置（YAML）：tunnel 用已建网卡的参数，socks5 指向 Xray 入站
-    private func hevConfig() -> String {
+    private func hevConfig(port: Int, logLevel: String) -> String {
         let y = [
             "tunnel:",
             "  name: tun0",
@@ -79,12 +85,12 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
             "  ipv6: fc00::1",
             "  icmp: reply",
             "socks5:",
-            "  port: 10808",
+            "  port: \(port),",
             "  address: 127.0.0.1",
             "  udp: udp",
             "misc:",
             "  log-file: null",
-            "  log-level: info",
+            "  log-level: \(logLevel),",
         ]
         return y.joined(separator: "\n") + "\n"
     }

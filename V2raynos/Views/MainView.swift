@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Network
+import UniformTypeIdentifiers
 
 /// 主界面：1:1 复刻 v2rayNG Android 首页布局（iOS Form/List 规范化）
 struct MainView: View {
@@ -22,6 +23,7 @@ struct MainView: View {
     @State private var sortMode = SortMode.default
     @State private var showRename: ServerGroup? = nil
     @State private var renameText = ""
+    @State private var showFileImporter = false
 
     enum SortMode: String, CaseIterable, Identifiable {
         case `default` = "默认"
@@ -67,15 +69,11 @@ struct MainView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    HStack(spacing: 10) {
-                        // 左上角 APP 图标（高清显示）
-                        Button { withAnimation(.easeInOut(duration: 0.25)) { drawerOpen.toggle() } } label: {
-                            Image("logo")
-                                .resizable()
-                                .interpolation(.high)
-                                .frame(width: 30, height: 30)
-                                .clipShape(RoundedRectangle(cornerRadius: 7))
-                        }
+                    // 左上角头像按钮（打开抽屉）
+                    Button { withAnimation(.easeInOut(duration: 0.25)) { drawerOpen.toggle() } } label: {
+                        Image(systemName: "person.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundColor(.secondary)
                     }
                 }
                 // 标题左对齐（v2rayNG 是左对齐，iOS 借 toolbar 结构实现）
@@ -125,6 +123,23 @@ struct MainView: View {
                 }
                 Button("取消", role: .cancel) { showRename = nil }
             }
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.plainText, .text, .data]) { result in
+                switch result {
+                case .success(let url):
+                    guard url.startAccessingSecurityScopedResource(),
+                          let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    do {
+                        _ = try ProfileParser.parse(text.trimmingCharacters(in: .whitespacesAndNewlines), groupID: groupID)
+                        store.importLinks(text, into: groupID)
+                    } catch {
+                        store.importLinks(text, into: groupID)
+                        if store.servers.isEmpty { addServerError = "文件内容未解析出节点"; showAddServerError = true }
+                    }
+                case .failure:
+                    break
+                }
+            }
         }
     }
 
@@ -155,7 +170,7 @@ struct MainView: View {
             Button { deleteConfig() } label: { Label("删除配置", systemImage: "trash") }
             Divider()
             Button { withAnimation { sortMode = .latency } } label: { Label("按测试结果排序", systemImage: "arrow.up.arrow.down") }
-            Button { tester.testAll(servers) } label: { Label("测试 TCP 延迟 (TCPing)", systemImage: "speedometer") }
+            Button { tester.tcpPingAll(servers) } label: { Label("测试 TCP 延迟 (TCPing)", systemImage: "speedometer") }
             Button { tester.testAll(servers) } label: { Label("测试真连接延迟", systemImage: "bolt.horizontal") }
             Divider()
             Button { store.updateAllSubscriptions() } label: { Label("更新订阅", systemImage: "arrow.triangle.2.circlepath") }
@@ -340,7 +355,9 @@ struct MainView: View {
         if vpn.status == .connected || vpn.status == .connecting {
             vpn.disconnect()
         } else if let s = current {
-            let cfg = ConfigGenerator.xrayJSON(profile: s, routing: [])
+            let routing = RoutingRule.load()
+            let strategy = UserDefaults.standard.string(forKey: "domainStrategy") ?? "IPIfNonMatch"
+            let cfg = ConfigGenerator.xrayJSON(profile: s, routing: routing, domainStrategy: strategy)
             vpn.connect(configJSON: cfg)
         }
     }
@@ -350,7 +367,9 @@ struct MainView: View {
             vpn.disconnect()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 if let s = self.current {
-                    self.vpn.connect(configJSON: ConfigGenerator.xrayJSON(profile: s, routing: []))
+                    let routing = RoutingRule.load()
+                    let strategy = UserDefaults.standard.string(forKey: "domainStrategy") ?? "IPIfNonMatch"
+                    self.vpn.connect(configJSON: ConfigGenerator.xrayJSON(profile: s, routing: routing, domainStrategy: strategy))
                 }
             }
         }
@@ -407,10 +426,9 @@ struct MainView: View {
         }
     }
 
-    /// 本地导入：暂以剪贴板占位（iOS 没有公共外部存储）
+    /// 本地导入：系统文件选择器（txt / 订阅文本文件）
     func importFromFile() {
-        addServerError = "iOS 沙盒限制，暂不支持本地文件导入；请用剪贴板/二维码/订阅"
-        showAddServerError = true
+        showFileImporter = true
     }
 }
 

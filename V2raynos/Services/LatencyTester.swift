@@ -7,10 +7,32 @@ final class LatencyTester: ObservableObject {
     @Published var results: [String: Int] = [:]   // guid -> ms；-1 = 失败
     @Published var testing = false
 
-    private let testURLString = "http://cp.cloudflare.com/generate_204?v2raynos=1"
+    private var testURLString: String { AppSettings.load().realPingURL }
     private let timeout: TimeInterval = 8
-    private let concurrency = 3
+    private var concurrency: Int { AppSettings.load().realPingConcurrent }
 
+    /// TCPing：纯 TCP 握手延迟（不经代理），v2rayNG「测试 TCP 延迟」同款
+    func tcpPingAll(_ servers: [ServerProfile]) {
+        guard !testing, !servers.isEmpty else { return }
+        testing = true
+        results = [:]
+        let group = DispatchGroup()
+        let sem = DispatchSemaphore(value: 16)
+        for s in servers {
+            group.enter()
+            DispatchQueue.global().async {
+                sem.wait()
+                self.tcpPing(s) { ms in
+                    DispatchQueue.main.async { self.results[s.id] = ms }
+                    sem.signal()
+                    group.leave()
+                }
+            }
+        }
+        group.notify(queue: .main) { self.testing = false }
+    }
+
+    /// 真连接延迟（经代理访问测试 URL）
     func testAll(_ servers: [ServerProfile]) {
         guard !testing, !servers.isEmpty else { return }
         testing = true
