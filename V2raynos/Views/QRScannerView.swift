@@ -124,7 +124,10 @@ struct CameraPreview: View {
             let output = AVCaptureMetadataOutput()
             if session.canAddOutput(output) { session.addOutput(output) }
             session.commitConfiguration()
-            output.setMetadataObjectsDelegate(QRDelegate(onCode: onCode), queue: .main)
+            // 修复：delegate 必须被强引用（否则扫码无反应）
+            let delegate = QRDelegate(onCode: onCode)
+            QRCoordinator.shared.attach(delegate)
+            output.setMetadataObjectsDelegate(delegate, queue: .main)
             output.metadataObjectTypes = [.qr]
             session.startRunning()
         }
@@ -192,6 +195,14 @@ final class QRDelegate: NSObject, AVCaptureMetadataOutputObjectsDelegate {
               obj.type == .qr, let code = obj.stringValue else { return }
         onCode(code)
     }
+}
+
+/// Coordinator：强持有 delegate 防提前释放
+final class QRCoordinator {
+    private var metadataDelegate: QRDelegate? = nil
+    static let shared = QRCoordinator()
+    func attach(_ d: QRDelegate) { metadataDelegate = d }
+    func detach() { metadataDelegate = nil }
 }
 
 /// CIFilter 识别静态图片二维码

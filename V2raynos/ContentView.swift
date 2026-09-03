@@ -1,22 +1,30 @@
 import SwiftUI
 
-/// 抽屉菜单页（v2rayNG 式左侧滑出）
+/// 抽屉菜单页（v2rayNG 左侧栏同序）
 enum DrawerPage: Int, Identifiable, Hashable {
-    case subscriptions, routing, settings, about
+    case subscriptions, perApp, routing, assets, settings, logcat, backup, about
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .subscriptions: return "订阅"
-        case .routing: return "路由"
+        case .subscriptions: return "订阅分组"
+        case .perApp: return "分应用设置"
+        case .routing: return "路由设置"
+        case .assets: return "资源文件"
         case .settings: return "设置"
+        case .logcat: return "Logcat"
+        case .backup: return "备份 & 还原"
         case .about: return "关于"
         }
     }
     var icon: String {
         switch self {
         case .subscriptions: return "arrow.triangle.2.circlepath"
+        case .perApp: return "square.grid.2x2"
         case .routing: return "arrow.triangle.branch"
+        case .assets: return "doc.on.doc"
         case .settings: return "gearshape"
+        case .logcat: return "terminal"
+        case .backup: return "externaldrive"
         case .about: return "info.circle"
         }
     }
@@ -47,7 +55,6 @@ struct ContentView: View {
                     .gesture(
                         DragGesture(minimumDistance: 20)
                             .onEnded { g in
-                                // 左滑关闭抽屉（水平位移超过 60 且向左）
                                 if g.translation.width < -60 {
                                     withAnimation(.easeInOut(duration: 0.25)) { drawerOpen = false }
                                 }
@@ -59,8 +66,12 @@ struct ContentView: View {
         .sheet(item: $page) { p in
             switch p {
             case .subscriptions: SubscriptionView()
+            case .perApp: PerAppPlaceholderView()
             case .routing: RoutingView()
+            case .assets: AssetsView()
             case .settings: SettingsView()
+            case .logcat: LogsView()
+            case .backup: BackupView()
             case .about: AboutView()
             }
         }
@@ -71,7 +82,6 @@ struct ContentView: View {
 struct DrawerView: View {
     @Binding var page: DrawerPage?
     @Binding var drawerOpen: Bool
-    @EnvironmentObject var store: Store
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -88,7 +98,7 @@ struct DrawerView: View {
             .padding(20)
             .background(Color.blue.opacity(0.12))
 
-            ForEach([DrawerPage.subscriptions, .routing, .settings, .about], id: \.self) { p in
+            ForEach([DrawerPage.subscriptions, .perApp, .routing, .assets, .settings, .logcat, .backup, .about], id: \.self) { p in
                 Button {
                     drawerOpen = false
                     page = p
@@ -106,10 +116,87 @@ struct DrawerView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Divider().padding(.leading, 20)
+                if p == .backup { Divider() }
             }
 
             Spacer()
+            VStack(alignment: .leading, spacing: 4) {
+                Text("v2rayNG for iOS")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("内核 Xray-core")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+            .padding(20)
+        }
+    }
+}
+
+/// 分应用设置（iOS 仅占位）
+struct PerAppPlaceholderView: View {
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 14) {
+                Image(systemName: "square.grid.2x2").font(.system(size: 44)).foregroundColor(.secondary)
+                Text("分应用设置").font(.headline)
+                Text("iOS 使用 TUN 全局接管，暂不支持按应用分流")
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            .navigationTitle("分应用设置")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// 资源文件
+struct AssetsView: View {
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("geoip.dat / geosite.dat") {
+                    Label("geoip.dat · 内置", systemImage: "doc")
+                    Label("geosite.dat · 内置", systemImage: "doc")
+                }
+                Section("说明") {
+                    Text("Xray-core 已内置路由资源文件，无需手动下载更新")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .navigationTitle("资源文件")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// 备份 & 还原
+struct BackupView: View {
+    @EnvironmentObject var store: Store
+    @State private var result: String? = nil
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("备份") {
+                    Button("备份全部节点到剪贴板") {
+                        let links = store.servers.map { $0.raw }.filter { !$0.isEmpty }.joined(separator: "\n")
+                        UIPasteboard.general.string = links
+                        result = "已复制 \(store.servers.count) 条节点链接"
+                    }
+                }
+                Section("还原") {
+                    Button("从剪贴板还原节点") {
+                        if let text = UIPasteboard.general.string, !text.isEmpty {
+                            store.importLinks(text, into: store.displayGroupID())
+                            result = "已导入 \(store.servers.count) 条"
+                        }
+                    }
+                }
+                if let result = result {
+                    Section { Text(result).font(.caption).foregroundColor(.secondary) }
+                }
+            }
+            .navigationTitle("备份 & 还原")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
