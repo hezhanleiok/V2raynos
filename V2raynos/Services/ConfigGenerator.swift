@@ -20,7 +20,11 @@ struct ConfigGenerator {
         ]
         let outbounds: [Any] = chainOutbounds(profile, allServers: allServers) + extraOutbounds()
         let config: [String: Any] = [
-            "log": ["loglevel": settings.logLevel],
+            "log": [
+                "loglevel": settings.logLevel,
+                "access": "none",
+                "error": SharedGroup.dir.appendingPathComponent("xray_error.log").path,
+            ],
             "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": routingDict(routing, domainStrategy: domainStrategy),

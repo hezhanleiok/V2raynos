@@ -6,13 +6,13 @@ enum DrawerPage: Int, Identifiable, Hashable {
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .subscriptions: return "订阅分组"
-        case .routing: return "路由设置"
-        case .assets: return "资源文件"
-        case .settings: return "设置"
-        case .logcat: return "Logcat"
-        case .backup: return "备份 & 还原"
-        case .about: return "关于"
+        case .subscriptions: return L10n.t("subscriptions")
+        case .routing: return L10n.t("routing")
+        case .assets: return L10n.t("assets")
+        case .settings: return L10n.t("settings")
+        case .logcat: return L10n.t("logcat")
+        case .backup: return L10n.t("backup")
+        case .about: return L10n.t("about")
         }
     }
     var icon: String {
@@ -121,23 +121,109 @@ struct DrawerView: View {
     }
 }
 
-/// 资源文件
+/// 资源文件：geosite.dat / geoip.dat 真实下载管理（存共享目录，Xray 启动即读）
 struct AssetsView: View {
+    @State private var geoDownloading = false
+    @State private var siteDownloading = false
+    @State private var geoStatus = "未下载"
+    @State private var siteStatus = "未下载"
+    @State private var downloadError: String? = nil
+
     var body: some View {
         NavigationStack {
-            List {
-                Section("geoip.dat / geosite.dat") {
-                    Label("geoip.dat · 内置", systemImage: "doc")
-                    Label("geosite.dat · 内置", systemImage: "doc")
+            Form {
+                Section("路由资源文件（存共享目录，扩展进程直接读取）") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("geosite.dat").font(.subheadline.weight(.semibold))
+                            Text(siteStatus).font(.caption).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if siteDownloading { ProgressView().scaleEffect(0.8) }
+                        Button(siteExists && !siteDownloading ? "更新" : "下载") {
+                            downloadAsset(url: "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat",
+                                          saveAs: "geosite.dat", isGeo: false)
+                        }
+                        .disabled(siteDownloading)
+                    }
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("geoip.dat").font(.subheadline.weight(.semibold))
+                            Text(geoStatus).font(.caption).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if geoDownloading { ProgressView().scaleEffect(0.8) }
+                        Button(geoExists && !geoDownloading ? "更新" : "下载") {
+                            downloadAsset(url: "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat",
+                                          saveAs: "geoip.dat", isGeo: true)
+                        }
+                        .disabled(geoDownloading)
+                    }
+                }
+                if let err = downloadError {
+                    Section {
+                        Text(err).font(.caption).foregroundColor(.red)
+                    }
                 }
                 Section("说明") {
-                    Text("Xray-core 已内置路由资源文件，无需手动下载更新")
+                    Text("下载后重启 VPN 生效。geosite.dat 用于域名路由（geosite:cn 等），geoip.dat 用于 IP 路由（geoip:cn 等）。")
                         .font(.caption).foregroundColor(.secondary)
                 }
             }
             .navigationTitle("资源文件")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear { refreshStatus() }
         }
+    }
+
+    private var siteExists: Bool { FileManager.default.fileExists(atPath: SharedGroup.dir.appendingPathComponent("geosite.dat").path) }
+    private var geoExists: Bool { FileManager.default.fileExists(atPath: SharedGroup.dir.appendingPathComponent("geoip.dat").path) }
+
+    private func refreshStatus() {
+        func fmt(_ name: String) -> String {
+            let u = SharedGroup.dir.appendingPathComponent(name)
+            guard let attr = try? FileManager.default.attributesOfItem(atPath: u.path),
+                  let size = attr[.size] as? Int, size > 0 else { return "未下载" }
+            let mb = Double(size) / 1048576.0
+            let date = (attr[.modificationDate] as? Date) ?? Date.distantPast
+            return String(format: "已就绪 · %.1f MB · %@", mb, date.formatted(.dateTime.month().day().hour().minute()))
+        }
+        siteStatus = fmt("geosite.dat")
+        geoStatus = fmt("geoip.dat")
+    }
+
+    /// 下载并覆盖保存到共享目录
+    private func downloadAsset(url: String, saveAs: String, isGeo: Bool) {
+        downloadError = nil
+        if isGeo { geoDownloading = true } else { siteDownloading = true }
+        guard let u = URL(string: url) else { finish(isGeo, err: "下载链接无效"); return }
+        let req = URLRequest(url: u, timeoutInterval: 120)
+        URLSession.shared.dataTask(with: req) { data, response, error in
+            DispatchQueue.main.async {
+                defer {
+                    if isGeo { self.geoDownloading = false } else { self.siteDownloading = false }
+                    self.refreshStatus()
+                }
+                if let error = error {
+                    self.downloadError = "下载失败：\(error.localizedDescription)"
+                    return
+                }
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                      let data = data, !data.isEmpty else {
+                    self.downloadError = "下载失败：服务器返回异常"
+                    return
+                }
+                let dest = SharedGroup.dir.appendingPathComponent(saveAs)
+                do { try data.write(to: dest, options: .atomic) } catch {
+                    self.downloadError = "保存失败：\(error.localizedDescription)"
+                }
+            }
+        }.resume()
+    }
+
+    private func finish(_ isGeo: Bool, err: String) {
+        downloadError = err
+        if isGeo { geoDownloading = false } else { siteDownloading = false }
     }
 }
 

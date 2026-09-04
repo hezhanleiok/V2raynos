@@ -11,6 +11,17 @@ final class LatencyTester: ObservableObject {
     private let timeout: TimeInterval = 8
     private var concurrency: Int { AppSettings.load().realPingConcurrent }
 
+    // 线程安全端口分配：并发测速下随机端口会碰撞（Address already in use），改为顺序递增
+    private var nextPort = 20000
+    private let portLock = NSLock()
+    private func getFreePort() -> Int {
+        portLock.lock()
+        defer { portLock.unlock() }
+        nextPort += 1
+        if nextPort > 40000 { nextPort = 20000 }
+        return nextPort
+    }
+
     /// TCPing：纯 TCP 握手延迟（不经代理），v2rayNG「测试 TCP 延迟」同款。
     /// 并发控制：sem.wait() 在 async 外部阻塞，任意多的节点也只占 16 个线程。
     func tcpPingAll(_ servers: [ServerProfile]) {
@@ -61,7 +72,7 @@ final class LatencyTester: ObservableObject {
 
     /// 经临时代理实测 generate_204
     private func testOne(_ s: ServerProfile, completion: @escaping (Int) -> Void) {
-        let port = 20000 + Int.random(in: 0...20000)
+        let port = getFreePort()
         let cfg = ConfigGenerator.latencyJSON(profile: s, httpPort: port)
         if cfg == "{}" { tcpPing(s, completion: completion); return }
         let bridge = XrayBridge()

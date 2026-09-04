@@ -15,10 +15,24 @@ struct SettingsView: View {
     @AppStorage("hevTunEnabled") private var hevTunEnabled = true
     @AppStorage("vpnMTU") private var vpnMTU = 1500
     @AppStorage("logLevel") private var logLevel = "warning"
+    @AppStorage("appTheme") private var appTheme = "system"
+    @AppStorage("appLanguage") private var appLanguage = "system"
 
     var body: some View {
         NavigationStack {
             Form {
+                Section(L10n.t("appearance")) {
+                    Picker(L10n.t("theme"), selection: $appTheme) {
+                        Text(L10n.t("theme.system")).tag("system")
+                        Text(L10n.t("theme.light")).tag("light")
+                        Text(L10n.t("theme.dark")).tag("dark")
+                    }
+                    Picker(L10n.t("language"), selection: $appLanguage) {
+                        Text(L10n.t("lang.system")).tag("system")
+                        Text(L10n.t("lang.zh")).tag("zh")
+                        Text(L10n.t("lang.en")).tag("en")
+                    }
+                }
                 Section("测试与进阶") {
                     TextField("真连接延迟测试 URL", text: $realPingURL)
                         .textInputAutocapitalization(.never)

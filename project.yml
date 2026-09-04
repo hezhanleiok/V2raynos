@@ -29,6 +29,7 @@ targets:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
+          NSAllowsArbitraryLoadsInWebContent: true
         NSCameraUsageDescription: 需要使用相机扫描二维码
     settings:
       base:
@@ -49,6 +50,7 @@ targets:
       - path: PacketTunnel
       - path: V2raynos/Services/XrayBridge.swift
       - path: V2raynos/Services/AppSettings.swift
+      - path: V2raynos/Services/SharedGroup.swift
     dependencies:
       - framework: frameworks/XrayCore.xcframework
     info:

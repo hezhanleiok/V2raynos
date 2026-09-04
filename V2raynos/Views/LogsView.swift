@@ -1,10 +1,14 @@
 import SwiftUI
 import UIKit
+import Combine
 
-/// Logcat：实时捕获 NSLog 输出显示在 List
+/// Logcat：读取共享目录的 Xray 错误日志（xray_error.log，App 与扩展进程同一文件），1 秒自动刷新
 struct LogsView: View {
-    @State private var text = "（未运行）启动 VPN 后在此显示日志"
+    @State private var text = "（暂无日志）启动 VPN 后自动显示内核输出"
     @State private var lines: [String] = []
+    private let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
+    private var logURL: URL { SharedGroup.dir.appendingPathComponent("xray_error.log") }
 
     var body: some View {
         NavigationStack {
@@ -25,25 +29,34 @@ struct LogsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
+                    // 手动刷新
+                    Button { loadLog() } label: { Image(systemName: "arrow.clockwise") }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         UIPasteboard.general.string = lines.joined(separator: "\n")
                     } label: { Image(systemName: "doc.on.doc") }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { lines.removeAll() } label: { Image(systemName: "trash") }
+                    // 清空日志
+                    Button {
+                        try? "".write(to: logURL, atomically: true, encoding: .utf8)
+                        lines.removeAll()
+                    } label: { Image(systemName: "trash") }
                 }
             }
             .onAppear { loadLog() }
+            .onReceive(timer) { _ in loadLog() }
         }
     }
 
     private func loadLog() {
-        // 读扩展进程日志（Release 下 NSLog 落 os_log，这里给静态提示）
-        let path = NSTemporaryDirectory() + "/v2raynos.log"
-        if let t = try? String(contentsOfFile: path, encoding: .utf8), !t.isEmpty {
-            lines = t.components(separatedBy: "\n").suffix(500)
+        if let t = try? String(contentsOf: logURL, encoding: .utf8) {
+            let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+            lines = trimmed.isEmpty ? [] : trimmed.components(separatedBy: "\n").suffix(500)
+            if lines.isEmpty { text = "（日志为空）内核启动后错误日志写入这里；正常连接时可能长时间无输出" }
         } else {
-            text = "（未运行）启动 VPN 后在此显示日志。内核日志通过 NSLog 输出到系统控制台。\n提示：可用「爱思助手/Console.app」查看 [v2raynos] 前缀日志"
+            text = "（暂无日志文件）首次启动 VPN 后生成 xray_error.log"
         }
     }
 }

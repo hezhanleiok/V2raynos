@@ -44,7 +44,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         // 3) 启动 Xray 核心（本地 SOCKS 入站 10808；tunFd=0：Xray 不直接碰 TUN）
         let bridge = XrayBridge()
         self.bridge = bridge
-        bridge.setup(envPath: configDirPath(), key: "")
+        // envPath 指向共享目录：Xray 启动时直接读取同目录的 geosite.dat / geoip.dat
+        bridge.setup(envPath: SharedGroup.dir.path, key: "")
         do {
             try bridge.start(configJSON: cfg, tunFd: 0)
             NSLog("[v2raynos] Xray core started, socks 127.0.0.1:10808")
@@ -102,10 +103,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         return y.joined(separator: "\n") + "\n"
     }
 
-    private func configDirPath() -> String {
-        let doc = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return doc.path
-    }
 
     override func stopTunnel(with reason: NEProviderStopReason) async {
         hev_socks5_tunnel_quit()

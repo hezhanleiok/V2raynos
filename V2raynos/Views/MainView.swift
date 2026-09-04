@@ -66,7 +66,7 @@ struct MainView: View {
                 // 右下角圆形浮动连接按钮（v2rayNG 同位）
                 fabButton
             }
-            .navigationTitle("配置项")
+            .navigationTitle(L10n.t("config.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -80,7 +80,7 @@ struct MainView: View {
                 // 标题左对齐（v2rayNG 是左对齐，iOS 借 toolbar 结构实现）
                 ToolbarItem(placement: .principal) {
                     HStack {
-                        Text("配置项").font(.headline.bold())
+                        Text(L10n.t("config.title")).font(.headline.bold())
                         Spacer()
                     }
                 }
