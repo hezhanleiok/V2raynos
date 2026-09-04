@@ -37,4 +37,7 @@ struct ServerProfile: Identifiable, Codable, Hashable {
     var settingsJson: String // 自定义高级 JSON
     var remark: String
     var raw: String         // 原始 URI（导入时保留）
+    // 链式代理（v2rayNG 订阅链）：前置/落地代理配置别名
+    var prevProfile: String? = nil
+    var nextProfile: String? = nil
 }

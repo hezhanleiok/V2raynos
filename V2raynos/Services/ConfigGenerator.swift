@@ -4,7 +4,8 @@ import Foundation
 struct ConfigGenerator {
     /// 全参版：所有 Settings 开关真实生效
     static func xrayJSON(profile: ServerProfile, settings: AppSettings = AppSettings.load(),
-                         routing: [RoutingRule] = [], domainStrategy: String = "IPIfNonMatch") -> String {
+                         routing: [RoutingRule] = [], domainStrategy: String = "IPIfNonMatch",
+                         allServers: [ServerProfile] = []) -> String {
         let listen = settings.allowLAN ? "0.0.0.0" : "127.0.0.1"
         let sniffing: [String: Any] = [
             "enabled": settings.sniffing,
@@ -17,7 +18,7 @@ struct ConfigGenerator {
             ["listen": "127.0.0.1", "port": settings.localPort + 1, "protocol": "dokodemo-door",
              "settings": ["address": "8.8.8.8", "port": 53, "network": "tcp,udp"], "sniffing": sniffing],
         ]
-        let outbounds: [Any] = [ outboundDict(profile) ] + extraOutbounds()
+        let outbounds: [Any] = chainOutbounds(profile, allServers: allServers) + extraOutbounds()
         let config: [String: Any] = [
             "log": ["loglevel": settings.logLevel],
             "inbounds": inbounds,
@@ -45,6 +46,33 @@ struct ConfigGenerator {
               let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s
     }
+
+    /// 链式代理（1:1 v2rayNG resolveProxyChainProfilesFromGroup）：
+    /// hops 顺序 = [next(落地), current, prev(前置)]；index 0 保留 tag "proxy"（路由指向它），
+    /// 每跳 sockopt.dialerProxy 指向下一跳：next 经 current 拨号、current 经 prev 拨号。
+    /// 实际链路：客户端 → prev(前置/入口) → current → next(落地/出口) → 目标。
+    private static func chainOutbounds(_ profile: ServerProfile, allServers: [ServerProfile]) -> [[String: Any]] {
+        var hops: [ServerProfile] = []
+        if let nextName = profile.nextProfile, !nextName.isEmpty,
+           let next = allServers.first(where: { $0.name == nextName && $0.id != profile.id }) { hops.append(next) }
+        hops.append(profile)
+        if let prevName = profile.prevProfile, !prevName.isEmpty,
+           let prev = allServers.first(where: { $0.name == prevName && $0.id != profile.id }) { hops.append(prev) }
+        guard hops.count > 1 else { return [outboundDict(profile)] }
+        var result: [[String: Any]] = []
+        for (i, hop) in hops.enumerated() {
+            var ob = outboundDict(hop)
+            ob["tag"] = i == 0 ? "proxy" : "chain-hop-\(i)"
+            if i < hops.count - 1 {
+                var ss = ob["streamSettings"] as? [String: Any] ?? [:]
+                ss["sockopt"] = ["dialerProxy": i + 1 == hops.count - 1 ? "chain-hop-\(hops.count - 1)" : "chain-hop-\(i + 1)"]
+                ob["streamSettings"] = ss
+            }
+            result.append(ob)
+        }
+        return result
+    }
+
 
     private static func outboundDict(_ p: ServerProfile) -> [String: Any] {
         var base: [String: Any] = [

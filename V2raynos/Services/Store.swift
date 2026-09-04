@@ -88,8 +88,15 @@ class Store: ObservableObject {
         guard let u = URL(string: trimmed) else { lastSubscriptionError = "订阅 URL 无效"; return }
         var req = URLRequest(url: u)
         req.timeoutInterval = 20
-        req.setValue("v2rayNG/1.8.5", forHTTPHeaderField: "User-Agent")
+        // 订阅可自定义 UA / 请求头（v2rayNG 同款）
+        let sub = subscriptions.first { $0.url == trimmed }
+        req.setValue(sub?.userAgent ?? "v2rayNG/1.8.5", forHTTPHeaderField: "User-Agent")
         req.setValue("text/plain, */*;q=0.8", forHTTPHeaderField: "Accept")
+        if let headersJSON = sub?.requestHeaders,
+           let data = headersJSON.data(using: .utf8),
+           let headers = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        }
         URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             guard let self = self else { return }
             if let error = error {
@@ -106,10 +113,27 @@ class Store: ObservableObject {
                        .replacingOccurrences(of: "\r", with: "\n")
             let finalText = text
             DispatchQueue.main.async {
-                let gid = self.subscriptions.first { $0.url == trimmed }?.groupID ?? self.displayGroupID()
+                self.lastSubscriptionError = nil
+                let sub = self.subscriptions.first { $0.url == trimmed }
+                let gid = sub?.groupID ?? self.displayGroupID()
                 // 刷新 = 先清空该订阅分组旧节点，避免重复堆积
                 self.servers.removeAll { $0.groupID == gid }
                 self.importLinks(finalText, into: gid)
+                // 别名正则过滤（v2rayNG filter）
+                if let pattern = sub?.filter, !pattern.isEmpty, let re = try? NSRegularExpression(pattern: pattern) {
+                    self.servers.removeAll { s in
+                        guard s.groupID == gid else { return false }
+                        return re.firstMatch(in: s.name, range: NSRange(s.name.startIndex..., in: s.name)) == nil
+                    }
+                }
+                // 链式代理：订阅级前置/落地代理注入到组内每个节点
+                if let sub = sub, sub.prevProfile != nil || sub.nextProfile != nil {
+                    for si in self.servers.indices where self.servers[si].groupID == gid {
+                        self.servers[si].prevProfile = sub.prevProfile
+                        self.servers[si].nextProfile = sub.nextProfile
+                    }
+                    self.saveServers()
+                }
                 if let i = self.subscriptions.firstIndex(where: { $0.url == trimmed }) {
                     self.subscriptions[i].lastUpdated = Date()
                     self.saveSubscriptions()
@@ -118,7 +142,7 @@ class Store: ObservableObject {
                 if self.currentServerID == nil || !self.servers.contains(where: { $0.id == self.currentServerID }) {
                     self.currentServerID = self.servers.first { $0.groupID == gid }?.id
                 }
-                if self.servers.isEmpty { self.lastSubscriptionError = "订阅内容未解析出任何节点" }
+                if self.servers.first(where: { $0.groupID == gid }) == nil { self.lastSubscriptionError = "订阅内容未解析出任何节点" }
             }
         }.resume()
     }
@@ -170,7 +194,7 @@ class Store: ObservableObject {
         if let d = try? JSONEncoder().encode(v) { try? d.write(to: file(name), options: .atomic) }
     }
     private func saveGroups() { save(groups, "groups") }
-    private func saveServers() { save(servers, "servers") }
+    func saveServers() { save(servers, "servers") }
     private func saveSubscriptions() { save(subscriptions, "subscriptions") }
     private func setCurrent(_ id: String?) { currentServerID = id; try? (id ?? "").write(to: file("current"), atomically: true, encoding: .utf8) }
 }

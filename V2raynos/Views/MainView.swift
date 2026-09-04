@@ -24,6 +24,7 @@ struct MainView: View {
     @State private var showRename: ServerGroup? = nil
     @State private var renameText = ""
     @State private var showFileImporter = false
+    @State private var showChainPicker = false
 
     enum SortMode: String, CaseIterable, Identifiable {
         case `default` = "默认"
@@ -69,10 +70,10 @@ struct MainView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    // 左上角头像按钮（打开抽屉）
+                    // 左上角设置按钮（打开抽屉）
                     Button { withAnimation(.easeInOut(duration: 0.25)) { drawerOpen.toggle() } } label: {
-                        Image(systemName: "person.circle.fill")
-                            .font(.system(size: 26))
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 22))
                             .foregroundColor(.secondary)
                     }
                 }
@@ -92,6 +93,9 @@ struct MainView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+            .sheet(isPresented: $showChainPicker) {
+                ChainProxySheet(groupID: groupID)
+            }
             .sheet(isPresented: $showQR) {
                 QRScannerView { code in handleScan(code) }
             }
@@ -157,6 +161,8 @@ struct MainView: View {
             Button { openEditor(.trojan) } label: { Label("添加 [Trojan]", systemImage: "number") }
             Button { openEditor(.hysteria2) } label: { Label("添加 [Hysteria2]", systemImage: "number") }
             Button { openEditor(.wireguard) } label: { Label("添加 [WireGuard]", systemImage: "number") }
+            Divider()
+            Button { showChainPicker = true } label: { Label("链式代理", systemImage: "link") }
         } label: {
             Image(systemName: "plus")
         }
@@ -357,7 +363,7 @@ struct MainView: View {
         } else if let s = current {
             let routing = RoutingRule.load()
             let strategy = UserDefaults.standard.string(forKey: "domainStrategy") ?? "IPIfNonMatch"
-            let cfg = ConfigGenerator.xrayJSON(profile: s, routing: routing, domainStrategy: strategy)
+            let cfg = ConfigGenerator.xrayJSON(profile: s, routing: routing, domainStrategy: strategy, allServers: store.servers)
             vpn.connect(configJSON: cfg)
         }
     }
@@ -369,7 +375,7 @@ struct MainView: View {
                 if let s = self.current {
                     let routing = RoutingRule.load()
                     let strategy = UserDefaults.standard.string(forKey: "domainStrategy") ?? "IPIfNonMatch"
-                    self.vpn.connect(configJSON: ConfigGenerator.xrayJSON(profile: s, routing: routing, domainStrategy: strategy))
+                    self.vpn.connect(configJSON: ConfigGenerator.xrayJSON(profile: s, routing: routing, domainStrategy: strategy, allServers: self.store.servers))
                 }
             }
         }
@@ -429,6 +435,77 @@ struct MainView: View {
     /// 本地导入：系统文件选择器（txt / 订阅文本文件）
     func importFromFile() {
         showFileImporter = true
+    }
+}
+
+/// 链式代理设置（v2rayNG 同款语义）：给当前分组每个节点指定前置/落地代理
+/// 前置代理 = 链入口；落地代理 = 链出口；通过 sockopt.dialerProxy 串联
+struct ChainProxySheet: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.dismiss) private var dismiss
+    let groupID: String
+    @State private var prev = ""
+    @State private var next = ""
+
+    private var groupServers: [ServerProfile] { store.servers(inGroup: groupID) }
+    private var candidates: [ServerProfile] {
+        store.servers.filter { $0.groupID != groupID }   // 不能链到自己组
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("当前分组：\(store.groups.first { $0.id == groupID }?.name ?? "")") {
+                    if groupServers.isEmpty {
+                        Text("该分组没有节点")
+                            .font(.caption).foregroundColor(.secondary)
+                    } else {
+                        Text("设置会应用到本分组 \(groupServers.count) 个节点的代理链")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+                Section("链式代理") {
+                    Picker("前置代理配置别名", selection: $prev) {
+                        Text("（无）").tag("")
+                        ForEach(Array(candidates.enumerated()), id: \.offset) { _, s in
+                            Text(s.name).tag(s.name)
+                        }
+                    }
+                    Text("所选代理会添加到每个配置的前面，作为代理链的入口节点。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Picker("落地代理配置别名", selection: $next) {
+                        Text("（无）").tag("")
+                        ForEach(Array(candidates.enumerated()), id: \.offset) { _, s in
+                            Text(s.name).tag(s.name)
+                        }
+                    }
+                    Text("所选代理会添加到每个配置的后面，作为代理链的出口节点。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("链式代理")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确定") {
+                        for i in store.servers.indices where store.servers[i].groupID == groupID {
+                            store.servers[i].prevProfile = prev.isEmpty ? nil : prev
+                            store.servers[i].nextProfile = next.isEmpty ? nil : next
+                        }
+                        store.saveServers()
+                        dismiss()
+                    }
+                    .disabled(groupServers.isEmpty)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            .onAppear {
+                prev = groupServers.first?.prevProfile ?? ""
+                next = groupServers.first?.nextProfile ?? ""
+            }
+        }
     }
 }
 
