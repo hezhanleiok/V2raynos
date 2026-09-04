@@ -11,6 +11,10 @@ final class XrayBridge {
     private var handler: Libv2rayCoreCallbackHandlerProtocol?
 
     func setup(envPath: String, key: String) {
+        // iOS 内存加固（见 PacketTunnelProvider.startTunnel 注释）：Jetsam 红线防静默强杀。
+        // 放在进 Go runtime 的最前面；overwrite=1 确保覆盖任何旧值。
+        setenv("GOGC", "30", 1)
+        setenv("GOMEMLIMIT", "10485760", 1)
         Libv2rayInitCoreEnv(envPath, key)
     }
 

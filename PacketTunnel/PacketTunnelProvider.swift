@@ -8,6 +8,13 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     private var hevThread: Thread?
 
     override func startTunnel(options: [String : NSObject]?) async throws {
+        // 内存加固：iOS Network Extension 有 ~15MB Jetsam 红线，超限被系统静默强杀（无日志、VPN 图标直接消失）。
+        // GOGC=30      → GC 触发阈值降到默认的 30%，让 Go 运行时勤快回收
+        // GOMEMLIMIT=10MB → 软内存上限锁死 10485760 字节，逼近即强制 GC，牺牲少量 CPU 换扩展长活
+        // 必须在任何 Go 代码执行前设置（setup/start 都会进 Go runtime），故放在 startTunnel 最顶部。
+        setenv("GOGC", "30", 1)
+        setenv("GOMEMLIMIT", "10485760", 1)
+
         guard let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol,
               let cfg = tunnelProtocol.providerConfiguration?["xrayConfig"] as? String,
               let settingsStr = tunnelProtocol.providerConfiguration?["settings"] as? String else {
