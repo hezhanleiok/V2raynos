@@ -34,6 +34,9 @@ struct ServerProfile: Identifiable, Codable, Hashable {
     var alpn: String
     var flow: String        // xtls flow
     var publicKey: String   // wireguard / reality
+    var fingerPrint: String = "" // uTLS 伪装指纹（chrome/ios/…）
+    var shortId: String = ""     // REALITY shortId
+    var spiderX: String = ""     // REALITY spiderX
     var settingsJson: String // 自定义高级 JSON
     var remark: String
     var raw: String         // 原始 URI（导入时保留）

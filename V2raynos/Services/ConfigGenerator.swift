@@ -93,7 +93,8 @@ struct ConfigGenerator {
     }
 
     private static func vlessSettings(_ p: ServerProfile) -> [String: Any] {
-        ["vnext": [["address": p.address, "port": p.port, "users": [["id": p.uuid, "encryption": "none", "flow": p.flow, "security": "auto"]]]]]
+        // VLESS users 无 security 字段（VMess 专有）；新版 Xray-core 强校验会拒绝多余字段
+        ["vnext": [["address": p.address, "port": p.port, "users": [["id": p.uuid, "encryption": "none", "flow": p.flow.isEmpty ? "" : p.flow]]]]]
     }
 
     private static func vmessSettings(_ p: ServerProfile) -> [String: Any] {
@@ -113,8 +114,32 @@ struct ConfigGenerator {
     }
 
     private static func streamDict(_ p: ServerProfile) -> [String: Any] {
-        var sd: [String: Any] = ["network": p.network, "security": p.sni.isEmpty ? "none" : "tls"]
-        if !p.sni.isEmpty { sd["tlsSettings"] = ["serverName": p.sni, "allowInsecure": false, "alpn": p.alpn.isEmpty ? ["h2", "http/1.1"] : p.alpn.split(separator: ",").map { String($0) }] }
+        // 三档判定（v2rayNG 语义）：REALITY > TLS > none
+        var sd: [String: Any] = ["network": p.network]
+        if !p.publicKey.isEmpty {
+            // REALITY：publicKey 存在即为 reality 节点
+            sd["security"] = "reality"
+            var rs: [String: Any] = [
+                "publicKey": p.publicKey,
+                "fingerprint": p.fingerPrint.isEmpty ? "chrome" : p.fingerPrint,
+                "serverName": p.sni,
+                "shortId": p.shortId,
+            ]
+            if !p.spiderX.isEmpty { rs["spiderX"] = p.spiderX }
+            sd["realitySettings"] = rs
+        } else if !p.sni.isEmpty {
+            // 普通 TLS
+            sd["security"] = "tls"
+            var ts: [String: Any] = [
+                "serverName": p.sni,
+                "allowInsecure": false,
+                "alpn": p.alpn.isEmpty ? ["h2", "http/1.1"] : p.alpn.split(separator: ",").map { String($0) },
+            ]
+            if !p.fingerPrint.isEmpty { ts["fingerprint"] = p.fingerPrint }
+            sd["tlsSettings"] = ts
+        } else {
+            sd["security"] = "none"
+        }
         if p.network == "ws" { sd["wsSettings"] = ["path": p.path, "headers": ["Host": p.sni.isEmpty ? p.address : p.sni]] }
         if p.network == "grpc" { sd["grpcSettings"] = ["serviceName": p.path] }
         if p.network == "kcp" { sd["kcpSettings"] = ["mtu": 1350] }

@@ -11,46 +11,52 @@ final class LatencyTester: ObservableObject {
     private let timeout: TimeInterval = 8
     private var concurrency: Int { AppSettings.load().realPingConcurrent }
 
-    /// TCPing：纯 TCP 握手延迟（不经代理），v2rayNG「测试 TCP 延迟」同款
+    /// TCPing：纯 TCP 握手延迟（不经代理），v2rayNG「测试 TCP 延迟」同款。
+    /// 并发控制：sem.wait() 在 async 外部阻塞，任意多的节点也只占 16 个线程。
     func tcpPingAll(_ servers: [ServerProfile]) {
         guard !testing, !servers.isEmpty else { return }
         testing = true
         results = [:]
         let group = DispatchGroup()
         let sem = DispatchSemaphore(value: 16)
-        for s in servers {
-            group.enter()
-            DispatchQueue.global().async {
-                sem.wait()
-                self.tcpPing(s) { ms in
-                    DispatchQueue.main.async { self.results[s.id] = ms }
-                    sem.signal()
-                    group.leave()
+        DispatchQueue.global().async {
+            for s in servers {
+                group.enter()
+                sem.wait() // 在派发外部阻塞：不向 GCD 请求多余线程，防线程爆炸
+                DispatchQueue.global().async {
+                    self.tcpPing(s) { ms in
+                        DispatchQueue.main.async { self.results[s.id] = ms }
+                        sem.signal()
+                        group.leave()
+                    }
                 }
             }
+            group.notify(queue: .main) { self.testing = false }
         }
-        group.notify(queue: .main) { self.testing = false }
     }
 
-    /// 真连接延迟（经代理访问测试 URL）
+    /// 真连接延迟（经代理访问测试 URL）。
+    /// 同样外部 wait：并发上限 = 设置的 realPingConcurrent。
     func testAll(_ servers: [ServerProfile]) {
         guard !testing, !servers.isEmpty else { return }
         testing = true
         results = [:]
         let group = DispatchGroup()
         let sem = DispatchSemaphore(value: concurrency)
-        for s in servers {
-            group.enter()
-            DispatchQueue.global().async {
-                sem.wait()
-                self.testOne(s) { ms in
-                    DispatchQueue.main.async { self.results[s.id] = ms }
-                    sem.signal()
-                    group.leave()
+        DispatchQueue.global().async {
+            for s in servers {
+                group.enter()
+                sem.wait() // 在派发外部阻塞：任意节点数只占 concurrency 个线程
+                DispatchQueue.global().async {
+                    self.testOne(s) { ms in
+                        DispatchQueue.main.async { self.results[s.id] = ms }
+                        sem.signal()
+                        group.leave()
+                    }
                 }
             }
+            group.notify(queue: .main) { self.testing = false }
         }
-        group.notify(queue: .main) { self.testing = false }
     }
 
     /// 经临时代理实测 generate_204

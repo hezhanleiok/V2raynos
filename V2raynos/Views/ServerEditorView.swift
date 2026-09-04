@@ -41,6 +41,8 @@ struct ServerEditorView: View {
     @State private var streamSecurity = ""
     @State private var sni = ""
     @State private var fingerPrint = ""
+    @State private var shortId = ""
+    @State private var spiderX = ""
     @State private var alpn = ""
     @State private var allowInsecure = false
 
@@ -219,6 +221,10 @@ struct ServerEditorView: View {
                 if streamSecurity == "reality" {
                     TextField("PublicKey", text: $publicKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("ShortId", text: $shortId)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("SpiderX（可选）", text: $spiderX)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
         }
@@ -267,8 +273,11 @@ struct ServerEditorView: View {
             network = p.network.isEmpty ? "tcp" : p.network
             host = p.sni; path = p.path
             sni = p.sni; alpn = p.alpn
-            streamSecurity = p.sni.isEmpty ? "" : "tls"
             publicKey = p.publicKey
+            fingerPrint = p.fingerPrint
+            shortId = p.shortId
+            spiderX = p.spiderX
+            streamSecurity = !p.publicKey.isEmpty ? "reality" : (p.sni.isEmpty ? "" : "tls")
         } else {
             network = "tcp"
         }
@@ -287,6 +296,7 @@ struct ServerEditorView: View {
                                    uuid: uuid_, password: password, cipher: security,
                                    sni: sni, network: network, path: path,
                                    alpn: alpn, flow: flow, publicKey: publicKey,
+                                   fingerPrint: fingerPrint, shortId: shortId, spiderX: spiderX,
                                    settingsJson: "", remark: "", raw: "")
             apply(to: &p)
             store.addServer(p)
@@ -307,5 +317,8 @@ struct ServerEditorView: View {
         p.sni = !sni.isEmpty ? sni : host
         p.alpn = alpn
         p.publicKey = publicKey
+        p.fingerPrint = fingerPrint
+        p.shortId = shortId
+        p.spiderX = spiderX
     }
 }

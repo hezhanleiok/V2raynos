@@ -37,6 +37,7 @@ struct ProfileParser {
             uuid: o["id"] as? String ?? "", password: "", cipher: "auto",
             sni: o["sni"] as? String ?? "", network: o["net"] as? String ?? "tcp",
             path: o["path"] as? String ?? "", alpn: "", flow: "", publicKey: "",
+            fingerPrint: o["fp"] as? String ?? "", shortId: "", spiderX: "",
             settingsJson: "", remark: name, raw: uri)
     }
 
@@ -57,6 +58,7 @@ struct ProfileParser {
             address: host, port: port, uuid: uuid, password: "", cipher: "none",
             sni: kv["sni"] ?? "", network: kv["type"] ?? "tcp", path: kv["path"] ?? "",
             alpn: kv["alpn"] ?? "", flow: kv["flow"] ?? "", publicKey: kv["pbk"] ?? "",
+            fingerPrint: kv["fp"] ?? "", shortId: kv["sid"] ?? "", spiderX: kv["spx"] ?? "",
             settingsJson: "", remark: name, raw: uri)
     }
 
@@ -77,6 +79,7 @@ struct ProfileParser {
             address: host, port: port, uuid: "", password: password, cipher: "",
             sni: kv["sni"] ?? "", network: kv["type"] ?? "tcp", path: kv["path"] ?? "",
             alpn: kv["alpn"] ?? "", flow: "", publicKey: "",
+            fingerPrint: "", shortId: "", spiderX: "",
             settingsJson: "", remark: name, raw: uri)
     }
 
@@ -104,6 +107,7 @@ struct ProfileParser {
         return ServerProfile(groupID: groupID, name: name, protocolType: .shadowsocks,
             address: host, port: port, uuid: "", password: pwd, cipher: cipher,
             sni: "", network: "tcp", path: "", alpn: "", flow: "", publicKey: "",
+            fingerPrint: "", shortId: "", spiderX: "",
             settingsJson: "", remark: name, raw: uri)
     }
 
@@ -121,6 +125,7 @@ struct ProfileParser {
         return ServerProfile(groupID: groupID, name: name, protocolType: .hysteria2,
             address: host, port: port, uuid: "", password: pwd, cipher: "",
             sni: "", network: "udp", path: "", alpn: "", flow: "", publicKey: "",
+            fingerPrint: "", shortId: "", spiderX: "",
             settingsJson: "", remark: name, raw: uri)
     }
 }
