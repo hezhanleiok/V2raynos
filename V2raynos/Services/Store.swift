@@ -88,6 +88,8 @@ class Store: ObservableObject {
         guard let u = URL(string: trimmed) else { lastSubscriptionError = "订阅 URL 无效"; return }
         var req = URLRequest(url: u)
         req.timeoutInterval = 20
+        // 强行忽略本地缓存：订阅 URL 固定时系统缓存会返回旧节点，必须每次从服务器拉最新
+        req.cachePolicy = .reloadIgnoringLocalCacheData
         // 订阅可自定义 UA / 请求头（v2rayNG 同款）
         let sub = subscriptions.first { $0.url == trimmed }
         req.setValue(sub?.userAgent ?? "v2rayNG/1.8.5", forHTTPHeaderField: "User-Agent")

@@ -1,15 +1,16 @@
 import Foundation
 import Network
 
-/// 真实链接延迟测试（v2rayNG 同款）：本地临时起 Xray socks 入站，经代理实测 generate_204。
-/// 失败自动回退 TCP 握手延迟。
+/// 真实链接延迟测试（v2rayNG 同款）：本地临时起 Xray http 入站，经代理实测 generate_204。
+/// 并发策略：TCPing 高并发（纯 TCP 握手，无内核参与）；真连接测速强制串行——
+/// Xray-core 的 Go runtime 充斥全局单例，同进程并发多实例会触发
+/// fatal error: concurrent map read and map write 直接闪退，必须排队单线程执行。
 final class LatencyTester: ObservableObject {
     @Published var results: [String: Int] = [:]   // guid -> ms；-1 = 失败
     @Published var testing = false
 
     private var testURLString: String { AppSettings.load().realPingURL }
     private let timeout: TimeInterval = 8
-    private var concurrency: Int { AppSettings.load().realPingConcurrent }
 
     // 线程安全端口分配：并发测速下随机端口会碰撞（Address already in use），改为顺序递增
     private var nextPort = 20000
@@ -22,18 +23,17 @@ final class LatencyTester: ObservableObject {
         return nextPort
     }
 
-    /// TCPing：纯 TCP 握手延迟（不经代理），v2rayNG「测试 TCP 延迟」同款。
-    /// 并发控制：sem.wait() 在 async 外部阻塞，任意多的节点也只占 16 个线程。
+    /// TCPing：纯 TCP 握手延迟（不经代理、不起内核），可高并发
     func tcpPingAll(_ servers: [ServerProfile]) {
         guard !testing, !servers.isEmpty else { return }
         testing = true
         results = [:]
         let group = DispatchGroup()
-        let sem = DispatchSemaphore(value: 16)
+        let sem = DispatchSemaphore(value: 16) // TCPing 无内核参与，可以高并发
         DispatchQueue.global().async {
             for s in servers {
                 group.enter()
-                sem.wait() // 在派发外部阻塞：不向 GCD 请求多余线程，防线程爆炸
+                sem.wait() // 派发外部阻塞：任意节点数只占 16 个线程，防线程爆炸
                 DispatchQueue.global().async {
                     self.tcpPing(s) { ms in
                         DispatchQueue.main.async { self.results[s.id] = ms }
@@ -46,18 +46,18 @@ final class LatencyTester: ObservableObject {
         }
     }
 
-    /// 真连接延迟（经代理访问测试 URL）。
-    /// 同样外部 wait：并发上限 = 设置的 realPingConcurrent。
+    /// 真连接延迟：涉及起调 Xray 内核，Go runtime 排斥单进程多实例并发，强制串行排队
     func testAll(_ servers: [ServerProfile]) {
         guard !testing, !servers.isEmpty else { return }
         testing = true
         results = [:]
         let group = DispatchGroup()
-        let sem = DispatchSemaphore(value: concurrency)
+        // 【关键】串行执行：semaphore=1，逐个起内核逐个测，避免 Go runtime 崩溃
+        let sem = DispatchSemaphore(value: 1)
         DispatchQueue.global().async {
             for s in servers {
                 group.enter()
-                sem.wait() // 在派发外部阻塞：任意节点数只占 concurrency 个线程
+                sem.wait()
                 DispatchQueue.global().async {
                     self.testOne(s) { ms in
                         DispatchQueue.main.async { self.results[s.id] = ms }
@@ -70,27 +70,24 @@ final class LatencyTester: ObservableObject {
         }
     }
 
-    /// 经临时代理实测 generate_204
+    /// 经临时代理实测 generate_204（单实例，串行调用）
     private func testOne(_ s: ServerProfile, completion: @escaping (Int) -> Void) {
         let port = getFreePort()
         let cfg = ConfigGenerator.latencyJSON(profile: s, httpPort: port)
         if cfg == "{}" { tcpPing(s, completion: completion); return }
         let bridge = XrayBridge()
-        bridge.setup(envPath: NSTemporaryDirectory(), key: "latency")
+        bridge.setup(envPath: SharedGroup.dir.path, key: "latency")
         do { try bridge.start(configJSON: cfg, tunFd: 0) } catch { tcpPing(s, completion: completion); return }
 
         let cfgObj = URLSessionConfiguration.ephemeral
         cfgObj.timeoutIntervalForRequest = timeout
         cfgObj.timeoutIntervalForResource = timeout
         cfgObj.requestCachePolicy = .reloadIgnoringLocalCacheData
+
         // iOS URLSession 不支持 SOCKS，用 http 入站 + HTTP 代理字典（字符串键在 iOS 有效）
         let proxyDict: [AnyHashable: Any] = [
-            "HTTPEnable": 1,
-            "HTTPProxy": "127.0.0.1",
-            "HTTPPort": port,
-            "HTTPSEnable": 1,
-            "HTTPSProxy": "127.0.0.1",
-            "HTTPSPort": port,
+            "HTTPEnable": 1, "HTTPProxy": "127.0.0.1", "HTTPPort": port,
+            "HTTPSEnable": 1, "HTTPSProxy": "127.0.0.1", "HTTPSPort": port,
         ]
         cfgObj.connectionProxyDictionary = proxyDict
         let session = URLSession(configuration: cfgObj)

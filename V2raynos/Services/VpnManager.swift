@@ -52,6 +52,9 @@ final class VpnManager: ObservableObject {
     /// 连接：写入配置 → 保存 → 载入 → startVPNTunnel(options:)
     func connect(configJSON: String) {
         lastError = nil
+        // 每次连接前清空日志：防止 xray_error.log 无限膨胀吃光存储，且只保留本次运行日志
+        let logURL = SharedGroup.dir.appendingPathComponent("xray_error.log")
+        try? "".write(to: logURL, atomically: true, encoding: .utf8)
         if let m = manager {
             apply(configJSON: configJSON, to: m)
         } else {

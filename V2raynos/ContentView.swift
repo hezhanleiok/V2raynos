@@ -31,6 +31,8 @@ enum DrawerPage: Int, Identifiable, Hashable {
 struct ContentView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var vpn: VpnManager
+    // 监听语言设置：设置页修改后立即触发整个视图树重绘（L10n.t 静态方法不自动刷新）
+    @AppStorage("appLanguage") private var appLanguage = "system"
     @State private var drawerOpen = false
     @State private var page: DrawerPage? = nil
 
