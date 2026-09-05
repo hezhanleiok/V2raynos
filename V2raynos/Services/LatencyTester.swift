@@ -77,7 +77,7 @@ final class LatencyTester: ObservableObject {
             "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": ["rules": routingRules],
-        }
+        ]
 
         guard let configData = try? JSONSerialization.data(withJSONObject: config),
               let configJSON = String(data: configData, encoding: .utf8) else {
