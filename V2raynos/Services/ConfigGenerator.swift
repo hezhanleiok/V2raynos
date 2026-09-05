@@ -35,21 +35,6 @@ struct ConfigGenerator {
         return s
     }
 
-    /// 延迟测试专用：http 入站（iOS URLSession 不支持 SOCKS，走 HTTP 代理）
-    static func latencyJSON(profile p: ServerProfile, httpPort: Int) -> String {
-        let outbounds: [Any] = [ outboundDict(p) ] + extraOutbounds()
-        let config: [String: Any] = [
-            "log": ["loglevel": "warning"],
-            "inbounds": [
-                ["listen": "127.0.0.1", "port": httpPort, "protocol": "http", "settings": ["allowTransparent": false]],
-            ],
-            "outbounds": outbounds,
-            "dns": ["servers": ["1.1.1.1", "8.8.8.8"]],
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: config, options: []),
-              let s = String(data: data, encoding: .utf8) else { return "{}" }
-        return s
-    }
 
     /// 链式代理（1:1 v2rayNG resolveProxyChainProfilesFromGroup）：
     /// hops 顺序 = [next(落地), current, prev(前置)]；index 0 保留 tag "proxy"（路由指向它），
@@ -78,7 +63,7 @@ struct ConfigGenerator {
     }
 
 
-    private static func outboundDict(_ p: ServerProfile) -> [String: Any] {
+    static func outboundDict(_ p: ServerProfile) -> [String: Any] {
         var base: [String: Any] = [
             "tag": "proxy",
             "server": p.address,
@@ -159,7 +144,11 @@ struct ConfigGenerator {
         var list: [[String: Any]] = rules.filter { $0.enabled }.map {
             ["type": "field", "domain": [$0.domain], "outboundTag": $0.outbound]
         }
-        list.append(["type": "field", "ip": ["geoip:private"], "outboundTag": "direct"])
+        // 【关键】geoip.dat 真实存在才追加 geoip 规则，否则 Xray 加载路由资源失败直接闪退
+        let geoipPath = SharedGroup.dir.appendingPathComponent("geoip.dat").path
+        if FileManager.default.fileExists(atPath: geoipPath) {
+            list.append(["type": "field", "ip": ["geoip:private"], "outboundTag": "direct"])
+        }
         return ["domainStrategy": domainStrategy, "rules": list]
     }
 }

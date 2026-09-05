@@ -1,27 +1,19 @@
 import Foundation
 import Network
 
-/// 真实链接延迟测试（v2rayNG 同款）：本地临时起 Xray http 入站，经代理实测 generate_204。
-/// 并发策略：TCPing 高并发（纯 TCP 握手，无内核参与）；真连接测速强制串行——
-/// Xray-core 的 Go runtime 充斥全局单例，同进程并发多实例会触发
-/// fatal error: concurrent map read and map write 直接闪退，必须排队单线程执行。
+/// 延迟测试（v2rayNG 同款思路）：
+/// - TCPing：纯 TCP 握手，高并发，无内核参与
+/// - 真连接：所有节点打包成一个多 Inbound/多 Outbound 的单个 Xray 配置，
+///   单次拉起内核，inboundTag -> outboundTag 一对一路由，URLSession 全并发测试。
+/// 防竞态：testing 状态锁阻止测速中重复触发；activeBridge 强持有当前内核，
+/// 结束时 stop 并置 nil；起始端口段随机，连续两次测速不会因残留端口占用而死锁。
 final class LatencyTester: ObservableObject {
     @Published var results: [String: Int] = [:]   // guid -> ms；-1 = 失败
     @Published var testing = false
 
     private var testURLString: String { AppSettings.load().realPingURL }
     private let timeout: TimeInterval = 8
-
-    // 线程安全端口分配：并发测速下随机端口会碰撞（Address already in use），改为顺序递增
-    private var nextPort = 20000
-    private let portLock = NSLock()
-    private func getFreePort() -> Int {
-        portLock.lock()
-        defer { portLock.unlock() }
-        nextPort += 1
-        if nextPort > 40000 { nextPort = 20000 }
-        return nextPort
-    }
+    private var activeBridge: XrayBridge? = nil
 
     /// TCPing：纯 TCP 握手延迟（不经代理、不起内核），可高并发
     func tcpPingAll(_ servers: [ServerProfile]) {
@@ -46,71 +38,101 @@ final class LatencyTester: ObservableObject {
         }
     }
 
-    /// 真连接延迟：涉及起调 Xray 内核，Go runtime 排斥单进程多实例并发，强制串行排队
+    /// 真连接延迟：聚合配置 + 单内核 + 全并发（v2rayNG 方案）
     func testAll(_ servers: [ServerProfile]) {
         guard !testing, !servers.isEmpty else { return }
         testing = true
         results = [:]
-        let group = DispatchGroup()
-        // 【关键】串行执行：semaphore=1，逐个起内核逐个测，避免 Go runtime 崩溃
-        let sem = DispatchSemaphore(value: 1)
-        DispatchQueue.global().async {
-            for s in servers {
-                group.enter()
-                sem.wait()
-                DispatchQueue.global().async {
-                    self.testOne(s) { ms in
-                        DispatchQueue.main.async { self.results[s.id] = ms }
-                        sem.signal()
-                        group.leave()
-                    }
-                }
-            }
-            group.notify(queue: .main) { self.testing = false }
+
+        var inbounds: [[String: Any]] = []
+        var outbounds: [[String: Any]] = []
+        var portMap: [String: Int] = [:]
+
+        // 随机起始端口段：连续两次测速之间旧内核可能尚未完全释放端口，固定段会冲突
+        var currentPort = Int.random(in: 21000...35000)
+
+        for s in servers {
+            currentPort += 1
+            portMap[s.id] = currentPort
+            inbounds.append([
+                "listen": "127.0.0.1", "port": currentPort, "protocol": "http",
+                "tag": "in-\(s.id)", "settings": ["allowTransparent": false]
+            ])
+            var ob = ConfigGenerator.outboundDict(s)
+            ob["tag"] = "out-\(s.id)"
+            outbounds.append(ob)
         }
-    }
+        outbounds.append(["protocol": "freedom", "tag": "direct"])
+        outbounds.append(["protocol": "blackhole", "tag": "block"])
 
-    /// 经临时代理实测 generate_204（单实例，串行调用）
-    private func testOne(_ s: ServerProfile, completion: @escaping (Int) -> Void) {
-        let port = getFreePort()
-        let cfg = ConfigGenerator.latencyJSON(profile: s, httpPort: port)
-        if cfg == "{}" { tcpPing(s, completion: completion); return }
-        let bridge = XrayBridge()
-        bridge.setup(envPath: SharedGroup.dir.path, key: "latency")
-        do { try bridge.start(configJSON: cfg, tunFd: 0) } catch { tcpPing(s, completion: completion); return }
+        let routingRules: [[String: Any]] = servers.map {
+            ["type": "field", "inboundTag": ["in-\($0.id)"], "outboundTag": "out-\($0.id)"]
+        }
 
-        let cfgObj = URLSessionConfiguration.ephemeral
-        cfgObj.timeoutIntervalForRequest = timeout
-        cfgObj.timeoutIntervalForResource = timeout
-        cfgObj.requestCachePolicy = .reloadIgnoringLocalCacheData
-
-        // iOS URLSession 不支持 SOCKS，用 http 入站 + HTTP 代理字典（字符串键在 iOS 有效）
-        let proxyDict: [AnyHashable: Any] = [
-            "HTTPEnable": 1, "HTTPProxy": "127.0.0.1", "HTTPPort": port,
-            "HTTPSEnable": 1, "HTTPSProxy": "127.0.0.1", "HTTPSPort": port,
+        let config: [String: Any] = [
+            "log": ["loglevel": "warning"],
+            "inbounds": inbounds,
+            "outbounds": outbounds,
+            "routing": ["rules": routingRules],
         ]
-        cfgObj.connectionProxyDictionary = proxyDict
-        let session = URLSession(configuration: cfgObj)
-        guard let url = URL(string: testURLString) else { bridge.stop(); completion(-1); return }
 
-        let start = Date()
-        var finished = false
-        let finish: (Int) -> Void = { ms in
-            if finished { return }
-            finished = true
-            bridge.stop()
-            completion(ms)
+        guard let configData = try? JSONSerialization.data(withJSONObject: config),
+              let configJSON = String(data: configData, encoding: .utf8) else {
+            self.testing = false
+            return
         }
-        let task = session.dataTask(with: url) { _, response, _ in
-            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-                finish(Int(Date().timeIntervalSince(start) * 1000))
-            } else {
-                finish(-1)
+
+        // 单次拉起内核：activeBridge 强持有，结束后 stop 释放端口
+        let bridge = XrayBridge()
+        self.activeBridge = bridge
+        bridge.setup(envPath: SharedGroup.dir.path, key: "latency_all")
+        do {
+            try bridge.start(configJSON: configJSON, tunFd: 0)
+        } catch {
+            self.activeBridge = nil
+            self.testing = false
+            return
+        }
+
+        // URLSession 全并发分发（每节点独立代理端口）
+        let group = DispatchGroup()
+        let baseCfg = URLSessionConfiguration.ephemeral
+        baseCfg.timeoutIntervalForRequest = timeout
+        baseCfg.timeoutIntervalForResource = timeout
+        baseCfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+
+        for s in servers {
+            group.enter()
+            let port = portMap[s.id]!
+            let proxyDict: [AnyHashable: Any] = [
+                "HTTPEnable": 1, "HTTPProxy": "127.0.0.1", "HTTPPort": port,
+                "HTTPSEnable": 1, "HTTPSProxy": "127.0.0.1", "HTTPSPort": port,
+            ]
+            let sessionCfg = baseCfg
+            sessionCfg.connectionProxyDictionary = proxyDict
+            let session = URLSession(configuration: sessionCfg)
+
+            guard let url = URL(string: testURLString) else { group.leave(); continue }
+            let start = Date()
+
+            let task = session.dataTask(with: url) { _, response, _ in
+                let ms: Int
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    ms = Int(Date().timeIntervalSince(start) * 1000)
+                } else {
+                    ms = -1
+                }
+                DispatchQueue.main.async { self.results[s.id] = ms }
+                group.leave()
             }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { task.resume() }
         }
-        // 给 Xray 一点启动时间
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { task.resume() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout + 1) { finish(-1) }
+
+        group.notify(queue: .main) {
+            self.activeBridge?.stop()
+            self.activeBridge = nil
+            self.testing = false
+        }
     }
 
     /// TCP 握手延迟（保底）

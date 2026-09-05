@@ -29,7 +29,6 @@ targets:
           - UIInterfaceOrientationPortrait
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
-          NSAllowsArbitraryLoadsInWebContent: true
         NSCameraUsageDescription: 需要使用相机扫描二维码
     settings:
       base:

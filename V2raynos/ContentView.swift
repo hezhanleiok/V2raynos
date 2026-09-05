@@ -63,6 +63,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: drawerOpen)
+        .id(appLanguage) // 显式绑定标识符：语言变化时销毁重建整棵视图树，强制 L10n 文案刷新
         .sheet(item: $page) { p in
             switch p {
             case .subscriptions: SubscriptionView()
