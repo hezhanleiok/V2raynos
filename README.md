@@ -1,7 +1,7 @@
 # V2raynos
 
 <p align="center">
-  <img src="V2raynos/Resources/logo.png" width="120" alt="V2raynos" />
+  <img src="V2raynos/Assets.xcassets/logo.imageset/logo.png" width="120" alt="V2raynos" />
 </p>
 
 **iOS 端 v2rayNG 复刻**：Xray-core 内核 + hev-socks5-tunnel TUN 路由 + SwiftUI iOS 风格 UI。1:1 复刻 v2rayNG 的交互与功能，GitHub Actions 云端构建 `.ipa`（后期提供正式签名分发，当前为未签名构建产物）。
@@ -62,7 +62,6 @@ V2raynos/
 │   │   ├── LatencyTester.swift # 真连接/TCP 延迟测试
 │   │   ├── ProfileParser.swift  # 分享链接解析
 │   │   └── XrayBridge.swift     # Xray-core 桥接（App/扩展共享）
-│   ├── Resources/logo.png       # 图标原图
 │   └── Views/                   # MainView / Subscription / Routing / Settings / Editor / QR / Logs / About / Backup
 ├── PacketTunnel/
 │   ├── PacketTunnelProvider.swift # TUN 设置 + Xray 启动 + hev 桥接线程

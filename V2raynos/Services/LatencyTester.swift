@@ -5,8 +5,11 @@ import Network
 /// - TCPing：纯 TCP 握手，高并发，无内核参与
 /// - 真连接：所有节点打包成一个多 Inbound/多 Outbound 的单个 Xray 配置，
 ///   单次拉起内核，inboundTag -> outboundTag 一对一路由，URLSession 全并发测试。
-/// 防竞态：testing 状态锁阻止测速中重复触发；activeBridge 强持有当前内核，
-/// 结束时 stop 并置 nil；起始端口段随机，连续两次测速不会因残留端口占用而死锁。
+/// 彻底修复：
+/// 1. 每次循环独立实例化 URLSessionConfiguration——它是 Class（引用类型），
+///    共享 baseCfg 会让最后一个节点的代理端口覆盖所有节点，测速结果串号。
+/// 2. NSLock + finished 双保险超时：任何请求异常不回调时强制 leave，
+///    DispatchGroup 计数绝不失衡，测速状态永不卡死。
 final class LatencyTester: ObservableObject {
     @Published var results: [String: Int] = [:]   // guid -> ms；-1 = 失败
     @Published var testing = false
@@ -74,7 +77,7 @@ final class LatencyTester: ObservableObject {
             "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": ["rules": routingRules],
-        ]
+        }
 
         guard let configData = try? JSONSerialization.data(withJSONObject: config),
               let configJSON = String(data: configData, encoding: .utf8) else {
@@ -94,28 +97,38 @@ final class LatencyTester: ObservableObject {
             return
         }
 
-        // URLSession 全并发分发（每节点独立代理端口）
         let group = DispatchGroup()
-        let baseCfg = URLSessionConfiguration.ephemeral
-        baseCfg.timeoutIntervalForRequest = timeout
-        baseCfg.timeoutIntervalForResource = timeout
-        baseCfg.requestCachePolicy = .reloadIgnoringLocalCacheData
 
         for s in servers {
             group.enter()
             let port = portMap[s.id]!
-            let proxyDict: [AnyHashable: Any] = [
+
+            // 【关键修复 1】每次循环独立创建 URLSessionConfiguration，防止引用共享导致端口串号
+            let sessionCfg = URLSessionConfiguration.ephemeral
+            sessionCfg.timeoutIntervalForRequest = timeout
+            sessionCfg.timeoutIntervalForResource = timeout
+            sessionCfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+            sessionCfg.connectionProxyDictionary = [
                 "HTTPEnable": 1, "HTTPProxy": "127.0.0.1", "HTTPPort": port,
                 "HTTPSEnable": 1, "HTTPSProxy": "127.0.0.1", "HTTPSPort": port,
             ]
-            let sessionCfg = baseCfg
-            sessionCfg.connectionProxyDictionary = proxyDict
             let session = URLSession(configuration: sessionCfg)
 
-            guard let url = URL(string: testURLString) else { group.leave(); continue }
+            guard let url = URL(string: testURLString) else {
+                group.leave()
+                continue
+            }
+
             let start = Date()
+            var finished = false
+            let lock = NSLock()
 
             let task = session.dataTask(with: url) { _, response, _ in
+                lock.lock()
+                defer { lock.unlock() }
+                guard !finished else { return }
+                finished = true
+
                 let ms: Int
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     ms = Int(Date().timeIntervalSince(start) * 1000)
@@ -125,7 +138,18 @@ final class LatencyTester: ObservableObject {
                 DispatchQueue.main.async { self.results[s.id] = ms }
                 group.leave()
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { task.resume() }
+
+            // 【关键修复 2】防死锁双保险超时，确保 group.leave 绝对能被调用
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) { task.resume() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + self.timeout + 1.5) {
+                lock.lock()
+                defer { lock.unlock() }
+                if !finished {
+                    finished = true
+                    DispatchQueue.main.async { self.results[s.id] = -1 }
+                    group.leave()
+                }
+            }
         }
 
         group.notify(queue: .main) {
