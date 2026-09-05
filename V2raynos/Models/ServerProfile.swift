@@ -43,9 +43,13 @@ struct ServerProfile: Identifiable, Codable, Hashable {
     // 链式代理（v2rayNG 订阅链）：前置/落地代理配置别名
     var prevProfile: String? = nil
     var nextProfile: String? = nil
+}
 
-    // Codable 兜底：Swift 合成解码器不用属性默认值，旧版/缺字段的 JSON 会 keyNotFound 抛错。
-    // 全字段 decodeIfPresent + 默认值，旧备份（REALITY 字段加入前）也能无损导入。
+// Codable 兜底放 extension：struct 内自定义 init(from:) 会杀死合成 memberwise init，
+// 6 处 ProfileParser/ServerEditorView 调用方依赖 memberwise 构造。extension 里的 init 不影响合成。
+// 兜底语义：Swift 合成解码器不用属性默认值，旧版/缺字段的 JSON 会 keyNotFound 抛错；
+// 全字段 decodeIfPresent + 默认值，旧备份（REALITY 字段加入前）也能无损导入。
+extension ServerProfile {
     enum CodingKeys: String, CodingKey {
         case id, groupID, name, protocolType, address, port, uuid, password, cipher
         case sni, network, path, alpn, flow, publicKey, fingerPrint, shortId, spiderX
